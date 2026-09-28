@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "cd relieflink/server && npm install && cd ../client && npm install && npm run build",
+    "build": "cd relieflink/server && npm install --include=dev && cd ../client && npm install --include=dev && npm run build",
     "start": "node relieflink/server/src/server.js"
   },
   "dependencies": {
