@@ -1,0 +1,14 @@
+[
+  {"text": "fire broke out in the warehouse and smoke filled the street", "label": "Fire"},
+  {"text": "there is a blaze spreading across the building and people are evacuating", "label": "Fire"},
+  {"text": "burning car accident near the gas station with flames visible", "label": "Fire"},
+  {"text": "heavy rain caused flooding in the neighborhood and roads are underwater", "label": "Flood"},
+  {"text": "river overflowed and the low lying area is flooded with water", "label": "Flood"},
+  {"text": "storm surge flooding homes and vehicles are stranded in water", "label": "Flood"},
+  {"text": "car crashed into a bus on the highway and traffic is blocked", "label": "Accident"},
+  {"text": "motorcycle collision on the bridge with injured persons requiring help", "label": "Accident"},
+  {"text": "pedestrian was hit by a vehicle and ambulance is needed", "label": "Accident"},
+  {"text": "house is on fire with thick black smoke and alarms sounding", "label": "Fire"},
+  {"text": "water is rising fast and families need evacuation from the flooded area", "label": "Flood"},
+  {"text": "truck hit a bicycle near the junction and the rider is injured", "label": "Accident"}
+]

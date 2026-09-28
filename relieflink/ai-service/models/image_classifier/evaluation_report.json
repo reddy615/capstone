@@ -1,0 +1,42 @@
+{
+  "status": "evaluated",
+  "accuracy": 1.0,
+  "precision": {
+    "Fire": 1.0,
+    "Flood": 1.0,
+    "Accident": 1.0
+  },
+  "recall": {
+    "Fire": 1.0,
+    "Flood": 1.0,
+    "Accident": 1.0
+  },
+  "f1": {
+    "Fire": 1.0,
+    "Flood": 1.0,
+    "Accident": 1.0
+  },
+  "confusion_matrix": [
+    [
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      1
+    ]
+  ],
+  "classes": [
+    "Fire",
+    "Flood",
+    "Accident"
+  ],
+  "validation_image_count": 3
+}

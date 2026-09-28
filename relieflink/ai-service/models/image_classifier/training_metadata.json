@@ -1,0 +1,17 @@
+{
+  "status": "trained",
+  "model_architecture": "MobileNetV2 transfer learning",
+  "input_size": [
+    224,
+    224,
+    3
+  ],
+  "classes": [
+    "Fire",
+    "Flood",
+    "Accident"
+  ],
+  "seed": 42,
+  "training_image_count": 9,
+  "validation_image_count": 3
+}
