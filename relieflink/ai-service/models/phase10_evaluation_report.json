@@ -1,0 +1,147 @@
+{
+  "classes": [
+    "Fire",
+    "Flood",
+    "Accident"
+  ],
+  "nlp": {
+    "evaluation_scope": "development dataset used to train the persisted NLP model; not an independent test set",
+    "sample_count": 12,
+    "accuracy": 1.0,
+    "precision_macro": 1.0,
+    "recall_macro": 1.0,
+    "f1_macro": 1.0,
+    "confusion_matrix": [
+      [
+        4,
+        0,
+        0
+      ],
+      [
+        0,
+        4,
+        0
+      ],
+      [
+        0,
+        0,
+        4
+      ]
+    ],
+    "per_class": {
+      "Fire": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 4
+      },
+      "Flood": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 4
+      },
+      "Accident": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "support": 4
+      }
+    }
+  },
+  "computer_vision": {
+    "evaluation_scope": "all available images, including training images; persisted validation report is retained separately",
+    "sample_count": 12,
+    "image_count_per_class": {
+      "Fire": 4,
+      "Flood": 4,
+      "Accident": 4
+    },
+    "persisted_validation_report": {
+      "status": "evaluated",
+      "accuracy": 1.0,
+      "precision": {
+        "Fire": 1.0,
+        "Flood": 1.0,
+        "Accident": 1.0
+      },
+      "recall": {
+        "Fire": 1.0,
+        "Flood": 1.0,
+        "Accident": 1.0
+      },
+      "f1": {
+        "Fire": 1.0,
+        "Flood": 1.0,
+        "Accident": 1.0
+      },
+      "confusion_matrix": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          1
+        ]
+      ],
+      "classes": [
+        "Fire",
+        "Flood",
+        "Accident"
+      ],
+      "validation_image_count": 3
+    },
+    "all_available_image_metrics": {
+      "accuracy": 1.0,
+      "precision_macro": 1.0,
+      "recall_macro": 1.0,
+      "f1_macro": 1.0,
+      "confusion_matrix": [
+        [
+          4,
+          0,
+          0
+        ],
+        [
+          0,
+          4,
+          0
+        ],
+        [
+          0,
+          0,
+          4
+        ]
+      ],
+      "per_class": {
+        "Fire": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 4
+        },
+        "Flood": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 4
+        },
+        "Accident": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 4
+        }
+      }
+    },
+    "scientific_reliability": "insufficient: only 4 images per class are available and no independent test set exists"
+  }
+}

@@ -34,7 +34,7 @@ Images are expected under:
 - data/image_dataset/Flood/
 - data/image_dataset/Accident/
 
-The repository includes the directory structure, but no real validated dataset is currently checked in. Training will fail safely if the dataset is missing or insufficient.
+The repository includes the current real development dataset. It contains 4 images per class, so it is sufficient for pipeline and integration checks but insufficient for meaningful scientific model evaluation.
 
 ## Training command
 
@@ -61,6 +61,12 @@ The model evaluation is produced during the training process and saved to:
 If the dataset is insufficient, the report contains:
 
 "Insufficient dataset for reliable evaluation."
+
+Phase 10 evaluation, including per-class metrics and confusion matrices for the available NLP and image data, can be generated with:
+
+python scripts/evaluate_phase10.py
+
+The resulting report is written to models/phase10_evaluation_report.json. Its limitations must be read with the metrics: the NLP examples are development/training examples and the image set has only 4 images per class with no independent test set.
 
 ## Model location
 
@@ -126,7 +132,7 @@ Unsupported files and corrupted uploads are rejected with HTTP 400. Missing or u
 
 ## Development / demo mode
 
-This Phase 5 implementation is intentionally safe. If no real validated image dataset is present, the AI service starts normally, but image inference returns HTTP 503 rather than fake predictions. This is the expected development/demo state until a real dataset is added and a trained model is produced.
+This Phase 5 implementation is intentionally safe. If no trained image model is available, the AI service starts normally, but image inference returns HTTP 503 rather than fake predictions. The current repository includes a trained model produced from the small development dataset; its metrics are not a claim of real-world reliability.
 
 ## Phase 6: Multimodal Fusion
 
