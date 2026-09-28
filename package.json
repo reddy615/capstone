@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "build": "cd relieflink/server && npm install && cd ../client && npm install && npm run build",
+    "start": "node relieflink/server/src/server.js"
+  },
   "dependencies": {
     "mongodb": "^7.6.0"
   }
