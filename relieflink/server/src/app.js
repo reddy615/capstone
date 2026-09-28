@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 const morgan = require('morgan');
 const path = require('path');
 const authRoutes = require('./routes/authRoutes');
@@ -10,6 +11,7 @@ const coordinationRoutes = require('./routes/coordinationRoutes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
+const clientDistPath = path.join(__dirname, '../../client/dist');
 
 app.disable('x-powered-by');
 app.use(cors({
@@ -32,6 +34,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/emergencies', emergencyRoutes);
 app.use('/api', coordinationRoutes);
 app.use('/api', protectedRoutes);
+
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);

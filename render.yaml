@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: relieflink
+    runtime: node
+    rootDir: .
+    buildCommand: npm run build && python3 -m pip install -r relieflink/ai-service/requirements.txt
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AI_SERVICE_URL
+        value: http://127.0.0.1:8000
+      - key: AI_SERVICE_HOST
+        value: 127.0.0.1
+      - key: AI_SERVICE_PORT
+        value: 8000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CLIENT_URL
+        sync: false

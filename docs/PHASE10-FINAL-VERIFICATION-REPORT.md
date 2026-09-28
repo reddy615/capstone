@@ -109,8 +109,10 @@ Observed local timings were approximately 16.8 ms text, 7.86 s first image infer
 - Backend build/package validation: **PASS**.
 - Backend start command: **PASS by package contract** — `node src/server.js`.
 - AI service build/dependency validation: **PASS**; FastAPI health endpoint responded.
+- Single-service startup: **PASS up to MongoDB**; Node spawned FastAPI on `127.0.0.1:8000`, waited for `/health`, and then attempted the existing MongoDB connection.
+- Express frontend serving: **PASS**; the built React shell returned HTTP 200 from Express.
 - Frontend build: **PASS**.
-- Railway readiness: **PASS by configuration inspection** — root directory `server`, build `npm install`, start `npm start`.
+- Render readiness: **PASS by configuration and local command checks** — one Web Service, repository root, `npm install --prefix server && npm install --prefix client && npm run build --prefix client && python3 -m pip install -r ai-service/requirements.txt`, and `npm --prefix server start`.
 - MongoDB production connectivity: **BLOCKED**.
 
 The backend startup error is:
@@ -132,10 +134,23 @@ querySrv ENOTFOUND _mongodb._tcp.cluster.example.mongodb.net
 - `relieflink/ai-service/scripts/evaluate_phase10.py`
 - `relieflink/ai-service/models/phase10_evaluation_report.json`
 - `docs/PHASE10-FINAL-VERIFICATION-REPORT.md`
+- `relieflink/server/src/services/aiProcess.js`
+- `render.yaml`
 
 ## Files modified
 
 - `relieflink/README.md`
+- `relieflink/ai-service/README.md`
+- `relieflink/server/src/server.js`
+- `relieflink/server/src/app.js`
+- `relieflink/server/src/services/aiIntegrationService.js`
+- `relieflink/client/src/App.jsx`
+- `relieflink/client/src/context/AuthContext.jsx`
+- `relieflink/client/src/pages/DashboardPage.jsx`
+- `relieflink/client/src/pages/EmergencySOSPage.jsx`
+- `relieflink/client/src/pages/LoginPage.jsx`
+- `relieflink/client/src/pages/RegisterPage.jsx`
+- `relieflink/client/.env.example`
 
 No Phase 4–9 production source behavior was changed during Phase 10.
 
@@ -156,6 +171,7 @@ No Phase 4–9 production source behavior was changed during Phase 10.
 - Real-world model reliability is not established.
 - A live high-confidence conflicting modality pair has not been demonstrated.
 - MongoDB-backed persistence, production backend APIs, and production Socket.IO delivery were not live-verified.
+- Full Render deployment has not been performed; local single-service startup was verified through FastAPI readiness and Express static serving before the MongoDB blocker.
 - First image inference includes model-loading overhead.
 
 ## FINAL STATUS

@@ -7,7 +7,8 @@ const Shelter = require('../models/Shelter');
 const Resource = require('../models/Resource');
 
 const CLASS_NAMES = ['Fire', 'Flood', 'Accident'];
-const AI_BASE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000/api/v1';
+const configuredAIServiceUrl = (process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
+const AI_BASE_URL = configuredAIServiceUrl.endsWith('/api/v1') ? configuredAIServiceUrl : `${configuredAIServiceUrl}/api/v1`;
 const AI_TIMEOUT_MS = Number(process.env.AI_SERVICE_TIMEOUT_MS || 15000);
 
 class AIServiceError extends Error {

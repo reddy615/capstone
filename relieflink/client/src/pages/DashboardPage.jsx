@@ -33,7 +33,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const [status, setStatus] = useState(emergency.status || 'Submitted');
   const [statusError, setStatusError] = useState('');
   const canUpdate = responderRoles.has(role) && role !== 'hospital';
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiBase = import.meta.env.VITE_API_URL || '/api';
   const evidence = emergency.aiEvidence || {};
   const probabilities = emergency.aiProbabilities instanceof Map
     ? Object.fromEntries(emergency.aiProbabilities)
@@ -130,7 +130,7 @@ export default function DashboardPage() {
   const [selectedEmergency, setSelectedEmergency] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [error, setError] = useState('');
-  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiBase = import.meta.env.VITE_API_URL || '/api';
   const isResponder = responderRoles.has(user?.role);
 
   const upsertEmergency = (incoming) => {
@@ -181,7 +181,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!token) return undefined;
     loadDashboard();
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
+    const socket = io(import.meta.env.VITE_SOCKET_URL || window.location.origin);
     const handlers = eventNames.map((eventName) => {
       const handler = (payload) => {
         const incoming = payload?.emergency || payload;

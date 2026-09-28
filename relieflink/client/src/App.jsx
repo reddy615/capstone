@@ -62,7 +62,7 @@ function AppRoutes() {
 
 export default function App() {
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000');
+    const socket = io(import.meta.env.VITE_SOCKET_URL || window.location.origin);
 
     socket.on('connect', () => {
       console.log('Socket connected:', socket.id);

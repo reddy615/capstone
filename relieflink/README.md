@@ -141,35 +141,27 @@ The Phase 10 automated result at the time of this report is 5 backend tests pass
 
 ## Deployment
 
-### Backend Railway deployment
+### Single-service Render deployment
 
-Railway settings for the Node backend:
+The repository includes `render.yaml` for one Render Web Service. The Node/Express process is the public process; it serves the React build and starts FastAPI as a localhost child process. FastAPI is not a separate public Render service.
 
-- Root Directory: `server`
-- Build Command: `npm install`
+- Root Directory: repository root (`.`)
+- Build Command: `npm run build && python3 -m pip install -r relieflink/ai-service/requirements.txt`
 - Start Command: `npm start`
-- `server/package.json` start script: `node src/server.js`
+- Root package start script: `node relieflink/server/src/server.js`
+- Internal AI URL: `http://127.0.0.1:8000`
 
-The backend reads `PORT`, `NODE_ENV`, `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, and `CLIENT_URL` from the environment. The repository contains only example variable names and no production secret values.
+On startup, Node launches Uvicorn on `127.0.0.1:8000`, waits for `/health`, then connects to MongoDB and starts the public server on Render's `PORT`. Shutdown signals stop the FastAPI child process. Express serves `client/dist` and Socket.IO remains attached to the same HTTP server.
 
-### AI service deployment
+The backend reads `PORT`, `NODE_ENV`, `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CLIENT_URL`, `AI_SERVICE_URL`, `AI_SERVICE_HOST`, `AI_SERVICE_PORT`, and `AI_STARTUP_TIMEOUT_MS`. The repository contains only example variable names and no production secret values. `VITE_API_URL` and `VITE_SOCKET_URL` are optional for separate local frontend development; the production build defaults to same-origin `/api` and Socket.IO.
 
-From `ai-service`, install `requirements.txt` and start FastAPI with a production process such as:
-
-```text
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-The trained image model and class labels must be present under `models/image_classifier/`. The service currently uses its application routes under `/api/v1`.
-
-### Frontend deployment
-
-The frontend uses `VITE_API_URL` for the backend API and `VITE_SOCKET_URL` for Socket.IO. Run `npm run build` and serve the generated Vite output with the selected hosting platform.
+The trained image model and class labels must be present under `ai-service/models/image_classifier/`. The AI service routes remain under `/api/v1` internally.
 
 ## Known limitations
 
 - Production MongoDB verification is pending because the current configured URI resolves to the placeholder host `cluster.example.mongodb.net`.
 - The Node backend cannot complete startup until valid MongoDB connectivity is provided; MongoDB configuration was not modified.
+- The one-service child-process architecture has been tested locally through FastAPI readiness and Node-to-FastAPI integration, but full Render deployment has not been performed.
 - The NLP score is measured on the 12 examples used to train the persisted development model, not an independent test set.
 - The image dataset has only 4 images per class and the 3-image validation score is not evidence of real-world model reliability.
 - The real AI disagreement tested so far did not produce two confidences at the unchanged 0.70 conflict threshold, so a genuine high-confidence `Verification Required` event remains un-demonstrated.

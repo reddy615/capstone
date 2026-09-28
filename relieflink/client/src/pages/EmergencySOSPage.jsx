@@ -135,7 +135,7 @@ export default function EmergencySOSPage() {
         payload.append('image', imageFile);
       }
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/emergencies`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/emergencies`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
