@@ -8,6 +8,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import EmergencySOSPage from './pages/EmergencySOSPage';
+import AdminPage from './pages/AdminPage';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -18,6 +19,24 @@ function ProtectedRoute({ children }) {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="flex min-h-[60vh] items-center justify-center text-slate-600">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role !== 'admin') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -52,6 +71,14 @@ function AppRoutes() {
             <ProtectedRoute>
               <EmergencySOSPage />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/*"
+          element={
+            <AdminRoute>
+              <AdminPage />
+            </AdminRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

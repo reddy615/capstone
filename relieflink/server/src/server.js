@@ -13,8 +13,16 @@ app.set('io', initSocket(server));
 let aiProcess;
 
 const startServer = async () => {
-  aiProcess = await startAIService();
-  app.set('aiProcess', aiProcess);
+  try {
+    aiProcess = await startAIService();
+    app.set('aiProcess', aiProcess);
+    console.log(`FastAPI AI service ready at http://${process.env.AI_SERVICE_HOST || '127.0.0.1'}:${process.env.AI_SERVICE_PORT || 8000}/health`);
+  } catch (error) {
+    console.error('FastAPI AI service failed to start. Continuing without AI integration:', error.message);
+    app.set('aiProcess', null);
+    app.set('aiServiceError', error.message);
+  }
+
   await connectDB();
 
   server.listen(PORT, () => {

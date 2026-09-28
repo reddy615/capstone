@@ -8,6 +8,7 @@ const authRoutes = require('./routes/authRoutes');
 const protectedRoutes = require('./routes/protectedRoutes');
 const emergencyRoutes = require('./routes/emergencyRoutes');
 const coordinationRoutes = require('./routes/coordinationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const { notFoundHandler, errorHandler } = require('./middleware/errorMiddleware');
 
 const app = express();
@@ -32,6 +33,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/emergencies', emergencyRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api', coordinationRoutes);
 app.use('/api', protectedRoutes);
 
