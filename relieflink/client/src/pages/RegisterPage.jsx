@@ -2,8 +2,6 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const roles = ['victim', 'volunteer', 'ngo', 'hospital', 'authority', 'admin'];
-
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -11,7 +9,6 @@ export default function RegisterPage() {
     name: '',
     email: '',
     password: '',
-    role: 'victim',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -95,22 +92,6 @@ export default function RegisterPage() {
               minLength={6}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
             />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Role</label>
-            <select
-              name="role"
-              value={form.role}
-              onChange={handleChange}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
           </div>
 
           <button

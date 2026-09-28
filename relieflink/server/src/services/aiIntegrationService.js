@@ -53,8 +53,17 @@ const predictImage = async (imagePath) => {
 };
 
 const distance = (first, second) => {
+  if (!Array.isArray(first) || !Array.isArray(second) || first.length < 2 || second.length < 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   const [firstLng, firstLat] = first;
   const [secondLng, secondLat] = second;
+
+  if (!Number.isFinite(firstLng) || !Number.isFinite(firstLat) || !Number.isFinite(secondLng) || !Number.isFinite(secondLat)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   return Math.hypot(firstLat - secondLat, firstLng - secondLng);
 };
 
@@ -71,35 +80,64 @@ const priorityFor = (prediction, confidence, verificationRequired, emergency) =>
 const findRecommendations = async (emergency, prediction) => {
   const point = [emergency.longitude, emergency.latitude];
   const recommendations = { facilities: [], resources: [] };
-  if (prediction === 'Accident') {
-    const hospitals = await Hospital.find({ availableBeds: { $gt: 0 } }).lean();
-    recommendations.facilities = hospitals
-      .sort((a, b) => distance(point, a.location.coordinates) - distance(point, b.location.coordinates))
-      .slice(0, 3);
-  } else if (prediction === 'Fire' || prediction === 'Flood') {
-    const shelters = await Shelter.find({ availableSlots: { $gt: 0 } }).lean();
-    recommendations.facilities = shelters
-      .sort((a, b) => distance(point, a.location.coordinates) - distance(point, b.location.coordinates))
-      .slice(0, 3);
+  const toLocationArray = (record) => {
+    if (!record || !record.location || !Array.isArray(record.location.coordinates) || record.location.coordinates.length < 2) {
+      return null;
+    }
+    return record.location.coordinates;
+  };
+
+  try {
+    if (prediction === 'Accident') {
+      const hospitals = await Hospital.find({ availableBeds: { $gt: 0 } }).lean().catch(() => []);
+      recommendations.facilities = hospitals
+        .filter((hospital) => toLocationArray(hospital))
+        .sort((a, b) => distance(point, toLocationArray(a)) - distance(point, toLocationArray(b)))
+        .slice(0, 3);
+    } else if (prediction === 'Fire' || prediction === 'Flood') {
+      const shelters = await Shelter.find({ availableSlots: { $gt: 0 } }).lean().catch(() => []);
+      recommendations.facilities = shelters
+        .filter((shelter) => toLocationArray(shelter))
+        .sort((a, b) => distance(point, toLocationArray(a)) - distance(point, toLocationArray(b)))
+        .slice(0, 3);
+    }
+  } catch (error) {
+    recommendations.facilities = [];
   }
-  const resourceTypes = prediction === 'Accident' ? ['medical', 'transport', 'rescue'] : ['shelter', 'rescue', 'equipment'];
-  const resources = await Resource.find({ type: { $in: resourceTypes }, quantity: { $gt: 0 } }).lean();
-  recommendations.resources = resources
-    .sort((a, b) => distance(point, a.location.coordinates) - distance(point, b.location.coordinates))
-    .slice(0, 5);
+
+  try {
+    const resourceTypes = prediction === 'Accident' ? ['medical', 'transport', 'rescue'] : ['shelter', 'rescue', 'equipment'];
+    const resources = await Resource.find({ type: { $in: resourceTypes }, quantity: { $gt: 0 } }).lean().catch(() => []);
+    recommendations.resources = resources
+      .filter((resource) => toLocationArray(resource))
+      .sort((a, b) => distance(point, toLocationArray(a)) - distance(point, toLocationArray(b)))
+      .slice(0, 5);
+  } catch (error) {
+    recommendations.resources = [];
+  }
+
   recommendations.facilityMessage = recommendations.facilities.length ? '' : 'No suitable registered facility available.';
   return recommendations;
 };
 
 const assignVolunteer = async (emergency, prediction, io) => {
   if (!prediction || !CLASS_NAMES.includes(prediction)) return null;
-  const volunteers = await Volunteer.find({ availability: 'available' }).lean();
+  const volunteers = await Volunteer.find({ availability: 'available' }).lean().catch(() => []);
   const skill = prediction.toLowerCase();
-  const suitable = volunteers.filter((volunteer) => !volunteer.skills.length || volunteer.skills.some((value) => value.toLowerCase().includes(skill)));
-  const selected = suitable.sort((a, b) => distance([emergency.longitude, emergency.latitude], a.location.coordinates) - distance([emergency.longitude, emergency.latitude], b.location.coordinates))[0];
+  const suitable = volunteers.filter((volunteer) => {
+    const skills = Array.isArray(volunteer?.skills) ? volunteer.skills : [];
+    return !skills.length || skills.some((value) => typeof value === 'string' && value.toLowerCase().includes(skill));
+  });
+  const selected = suitable
+    .map((volunteer) => ({
+      volunteer,
+      distanceValue: distance([emergency.longitude, emergency.latitude], Array.isArray(volunteer?.location?.coordinates) ? volunteer.location.coordinates : [0, 0]),
+    }))
+    .filter(({ distanceValue }) => Number.isFinite(distanceValue))
+    .sort((a, b) => a.distanceValue - b.distanceValue)[0]?.volunteer;
   if (!selected) return null;
-  await Volunteer.updateOne({ _id: selected._id }, { $set: { availability: 'busy' } });
-  await Emergency.updateOne({ _id: emergency._id }, { $set: { assignedVolunteer: selected._id, status: 'Assigned' } });
+  await Volunteer.updateOne({ _id: selected._id }, { $set: { availability: 'busy' } }).catch(() => {});
+  await Emergency.updateOne({ _id: emergency._id }, { $set: { assignedVolunteer: selected._id, status: 'Assigned' } }).catch(() => {});
   emit(io, 'emergency:volunteer-assigned', { ...emergency.toObject(), assignedVolunteer: selected._id });
   return selected;
 };
@@ -126,7 +164,9 @@ const processEmergencyAI = async (emergencyId, io) => {
     const verificationRequired = Boolean(fusion.verification_required);
     const finalPrediction = verificationRequired ? '' : fusion.prediction;
     const priority = priorityFor(finalPrediction, Number(fusion.confidence || 0), verificationRequired, emergency);
-    const recommendations = verificationRequired ? { facilities: [], resources: [], facilityMessage: 'Human verification is required before recommendations.' } : await findRecommendations(emergency, finalPrediction);
+    const recommendations = verificationRequired
+      ? { facilities: [], resources: [], facilityMessage: 'Human verification is required before recommendations.' }
+      : await findRecommendations(emergency, finalPrediction).catch(() => ({ facilities: [], resources: [], facilityMessage: 'No suitable registered facility available.' }));
     emergency = await Emergency.findByIdAndUpdate(emergencyId, {
       aiStatus: verificationRequired ? 'Verification Required' : 'Completed',
       aiPrediction: finalPrediction,
@@ -146,8 +186,12 @@ const processEmergencyAI = async (emergencyId, io) => {
       recommendations,
     }, { new: true }).populate('assignedVolunteer');
     if (!verificationRequired) {
-      const volunteer = await assignVolunteer(emergency, finalPrediction, io);
-      if (volunteer) emergency.assignedVolunteer = volunteer;
+      try {
+        const volunteer = await assignVolunteer(emergency, finalPrediction, io);
+        if (volunteer) emergency.assignedVolunteer = volunteer;
+      } catch (assignmentError) {
+        console.warn('Volunteer assignment skipped because the volunteer dataset is incomplete:', assignmentError.message);
+      }
     }
     emit(io, verificationRequired ? 'emergency:verification-required' : 'emergency:ai-completed', emergency);
     emit(io, 'emergency:priority-updated', emergency);

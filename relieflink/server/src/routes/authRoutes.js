@@ -15,7 +15,7 @@ const generateToken = (id) => {
 
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, role, phone } = req.body;
+    const { name, email, password, phone } = req.body;
 
     if (!name || !email || !password) {
       return next(new AppError('Name, email, and password are required', 400));
@@ -26,14 +26,11 @@ router.post('/register', async (req, res, next) => {
       return next(new AppError('User already exists', 400));
     }
 
-    const validRoles = Object.values(ROLES);
-    const userRole = validRoles.includes(role) ? role : ROLES.VICTIM;
-
     const user = await User.create({
       name,
       email: email.toLowerCase(),
       password,
-      role: userRole,
+      role: ROLES.VICTIM,
       phone: phone || '',
     });
 

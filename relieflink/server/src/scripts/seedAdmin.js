@@ -4,7 +4,7 @@ const User = require('../models/User');
 const { ROLES } = require('../utils/roles');
 
 const ADMIN_EMAIL = '2300090002@kluniversity.in';
-const ADMIN_PASSWORD = process.env.RELIEFLINK_ADMIN_PASSWORD || 'CAPSTONE26';
+const ADMIN_PASSWORD = process.env.RELIEFLINK_ADMIN_PASSWORD;
 
 const seedAdmin = async () => {
   if (!process.env.MONGODB_URI) {
@@ -30,6 +30,10 @@ const seedAdmin = async () => {
         console.log('Admin account already exists.');
       }
       return;
+    }
+
+    if (!ADMIN_PASSWORD) {
+      throw new Error('RELIEFLINK_ADMIN_PASSWORD must be set before creating the admin account.');
     }
 
     await User.create({
