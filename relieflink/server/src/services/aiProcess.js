@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -5,6 +6,11 @@ const AI_HOST = process.env.AI_SERVICE_HOST || '127.0.0.1';
 const AI_PORT = Number(process.env.AI_SERVICE_PORT || 8000);
 const AI_STARTUP_TIMEOUT_MS = Number(process.env.AI_STARTUP_TIMEOUT_MS || 30000);
 const AI_HEALTH_URL = `http://${AI_HOST}:${AI_PORT}/health`;
+
+const aiServiceDirectory = path.resolve(__dirname, '../../../ai-service');
+const virtualEnvironmentPython = process.platform === 'win32'
+  ? path.join(aiServiceDirectory, '.venv', 'Scripts', 'python.exe')
+  : path.join(aiServiceDirectory, '.venv', 'bin', 'python');
 
 const waitForAIHealth = async (childProcess) => {
   const startedAt = Date.now();
@@ -29,8 +35,10 @@ const waitForAIHealth = async (childProcess) => {
 };
 
 const startAIService = async () => {
-  const pythonCommand = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
-  const aiServiceDirectory = path.resolve(__dirname, '../../../ai-service');
+  const pythonCommand = process.env.PYTHON_BIN || virtualEnvironmentPython;
+  if (!fs.existsSync(pythonCommand)) {
+    throw new Error(`FastAPI virtual-environment Python executable was not found at ${pythonCommand}. Run the deployment build first.`);
+  }
   const childProcess = spawn(
     pythonCommand,
     ['-m', 'uvicorn', 'app.main:app', '--host', AI_HOST, '--port', String(AI_PORT)],

@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "cd relieflink/server && npm install --include=dev && cd ../client && npm install --include=dev && npm run build && cd ../.. && node -e \"const {execFileSync}=require('child_process'); const python=process.platform==='win32'?'python':'python3'; execFileSync(python,['-m','pip','install','-r','relieflink/ai-service/requirements.txt'],{stdio:'inherit'});\"",
+    "build": "cd relieflink/server && npm install --include=dev && cd ../client && npm install --include=dev && npm run build && cd ../.. && node scripts/setup_ai_venv.js",
     "start": "node relieflink/server/src/server.js"
   },
   "dependencies": {
