@@ -17,15 +17,23 @@ const seedAdmin = async () => {
   });
 
   try {
-    const existing = await User.findOne({ email: ADMIN_EMAIL.toLowerCase() }).lean();
+    const existing = await User.findOne({ email: ADMIN_EMAIL.toLowerCase() });
 
     if (existing) {
+      let accountChanged = false;
       if (existing.role !== ROLES.ADMIN) {
-        await User.updateOne(
-          { _id: existing._id },
-          { $set: { role: ROLES.ADMIN, isActive: true } }
-        );
-        console.log('Admin role updated for existing user account.');
+        existing.role = ROLES.ADMIN;
+        existing.isActive = true;
+        accountChanged = true;
+      }
+      if (ADMIN_PASSWORD) {
+        existing.password = ADMIN_PASSWORD;
+        accountChanged = true;
+      }
+
+      if (accountChanged) {
+        await existing.save();
+        console.log('Admin account updated from configured seed settings.');
       } else {
         console.log('Admin account already exists.');
       }
