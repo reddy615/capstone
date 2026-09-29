@@ -127,9 +127,11 @@ export default function EmergencySOSPage() {
     if (!token) return undefined;
     const socket = io(import.meta.env.VITE_SOCKET_URL || window.location.origin);
     const eventNames = [
+      'emergency:created',
       'emergency:ai-processing',
       'emergency:ai-completed',
       'emergency:verification-required',
+      'emergency:priority-updated',
       'emergency:volunteer-assigned',
       'emergency:facility-recommended',
       'emergency:status-updated',
@@ -137,7 +139,7 @@ export default function EmergencySOSPage() {
     ];
     const handlers = eventNames.map((eventName) => {
       const handler = (payload) => {
-        const emergencyId = payload?.emergencyId || payload?.emergency?._id || payload?.emergency?.id;
+        const emergencyId = payload?.emergencyId || payload?.emergency?._id || payload?.emergency?.id || payload?.id;
         if (!emergencyId || String(emergencyId) !== String(currentEmergencyId.current)) return;
         if (eventName === 'emergency:ai-processing') {
           setResultLoading(true);
@@ -270,6 +272,26 @@ export default function EmergencySOSPage() {
     required: 'Required',
     not_required: 'Not Required',
   }[status] || 'N/A');
+
+  const emergencyId = resultEmergency?.id || resultEmergency?._id || submittedEmergency?.id || submittedEmergency?._id;
+  const emergencyStatus = resultEmergency?.status || submittedEmergency?.status || 'Submitted';
+  const aiAnalysisComplete = ['Completed', 'Verification Required', 'completed'].includes(aiStatus);
+  const responderAssigned = Boolean(resultEmergency?.assignedVolunteer);
+  const responseComplete = ['In Progress', 'Resolved'].includes(emergencyStatus);
+  const confirmationSteps = [
+    { label: 'SOS Submitted', state: emergencyId ? 'completed' : 'pending' },
+    { label: 'AI Analysis', state: aiFailed ? 'failed' : aiInProgress ? 'in_progress' : aiAnalysisComplete ? 'completed' : 'pending' },
+    { label: 'Responder Assignment', state: responderAssigned ? 'completed' : 'pending' },
+    { label: 'Emergency Response', state: responseComplete ? 'completed' : emergencyStatus === 'Cancelled' ? 'not_required' : 'pending' },
+  ];
+
+  const confirmationStepText = (state) => ({
+    completed: '✓ Completed',
+    in_progress: '⏳ In Progress',
+    pending: '⏳ Pending',
+    failed: '⚠ Unavailable',
+    not_required: '— Not Required',
+  }[state] || 'N/A');
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -406,12 +428,6 @@ export default function EmergencySOSPage() {
             </div>
           )}
 
-          {success && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              {success}
-            </div>
-          )}
-
           <button
             type="submit"
             disabled={loading}
@@ -458,22 +474,69 @@ export default function EmergencySOSPage() {
 
       {submittedEmergency && (
         <div className="mt-6 space-y-6">
-          <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5" aria-label="Submitted emergency details">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-cyan-950">Emergency submitted</h2>
-                <p className="mt-1 text-sm text-cyan-900">{resultEmergency?.id || submittedEmergency.id || submittedEmergency._id}</p>
-                <p className="mt-1 text-sm text-cyan-800">
-                  {Number.isFinite(Number(resultEmergency?.latitude)) && Number.isFinite(Number(resultEmergency?.longitude))
-                    ? `${resultEmergency.latitude}, ${resultEmergency.longitude}`
-                    : 'Location N/A'}
-                  {resultEmergency?.createdAt ? ` · ${new Date(resultEmergency.createdAt).toLocaleString()}` : ''}
-                </p>
-              </div>
-              <span className="rounded-full bg-white px-3 py-1 text-sm font-medium text-cyan-900">{resultEmergency?.status || 'Submitted'}</span>
+          <section
+            className="overflow-hidden rounded-2xl border-2 border-red-300 bg-white shadow-lg"
+            aria-label="SOS submission confirmation"
+            aria-live="assertive"
+            aria-atomic="true"
+          >
+            <div className="bg-red-800 px-5 py-7 text-center text-white sm:px-8 sm:py-9">
+              <div aria-hidden="true" className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-white/40 bg-white/15 text-4xl sm:h-20 sm:w-20 sm:text-5xl">🚨</div>
+              <h2 className="mt-4 text-2xl font-extrabold leading-tight sm:text-3xl">SOS SUBMITTED SUCCESSFULLY</h2>
+              <p className="mx-auto mt-3 max-w-2xl text-lg font-semibold leading-relaxed sm:text-xl">
+                Your emergency has been reported successfully.
+              </p>
+              <p className="mx-auto mt-2 max-w-2xl text-base leading-relaxed text-red-50 sm:text-lg">
+                {aiFailed
+                  ? 'Your emergency has still been recorded and can be handled by responders.'
+                  : 'AI analysis and emergency response coordination are now in progress.'}
+              </p>
             </div>
-            {success && <p role="status" className="mt-3 text-sm text-cyan-900">{success}</p>}
-            {resultError && <p role="alert" className="mt-3 text-sm text-rose-700">Response details could not be refreshed: {resultError}</p>}
+
+            <div className="p-5 sm:p-7">
+              {aiFailed ? (
+                <div role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+                  <p className="font-semibold">⚠ AI analysis is temporarily unavailable.</p>
+                  <p className="mt-1 text-sm">Your emergency has still been recorded and can be handled by responders.</p>
+                </div>
+              ) : null}
+              {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
+                <div role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
+                  <p className="font-semibold">⚠ VERIFICATION REQUIRED</p>
+                  <p className="mt-1 text-sm">The AI models produced conflicting information. Please verify the emergency details.</p>
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Emergency ID</p>
+                  <p className="mt-1 break-all font-mono text-sm font-semibold text-slate-900 sm:text-base">{emergencyId || 'N/A'}</p>
+                </div>
+                <div className="shrink-0 text-left sm:text-right">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Current status</p>
+                  <p className="mt-1 text-base font-bold text-slate-900">{emergencyStatus}</p>
+                </div>
+              </div>
+
+              <ol className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Emergency response progress">
+                {confirmationSteps.map((step, index) => (
+                  <li key={step.label} className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200 p-3 sm:flex-col sm:gap-2 sm:p-4">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${step.state === 'completed' ? 'bg-emerald-100 text-emerald-800' : step.state === 'failed' ? 'bg-amber-100 text-amber-900' : 'bg-slate-100 text-slate-700'}`} aria-hidden="true">
+                      {step.state === 'completed' ? '✓' : step.state === 'failed' ? '!' : step.state === 'in_progress' ? '…' : index + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">{step.label}</p>
+                      <p className={`mt-1 text-sm ${step.state === 'completed' ? 'font-medium text-emerald-800' : step.state === 'failed' ? 'font-medium text-amber-800' : step.state === 'in_progress' ? 'font-medium text-cyan-800' : 'text-slate-600'}`}>
+                        {confirmationStepText(step.state)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+
+              {resultError && <p role="alert" className="mt-4 text-sm text-rose-700">Response details could not be refreshed: {resultError}</p>}
+              {success && !aiFailed && <p className="sr-only" role="status">{success}</p>}
+            </div>
           </section>
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="model-predictions-heading">
