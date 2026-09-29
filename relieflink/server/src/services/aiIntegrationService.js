@@ -10,6 +10,7 @@ const CLASS_NAMES = ['Fire', 'Flood', 'Accident'];
 const configuredAIServiceUrl = (process.env.AI_SERVICE_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
 const AI_BASE_URL = configuredAIServiceUrl.endsWith('/api/v1') ? configuredAIServiceUrl : `${configuredAIServiceUrl}/api/v1`;
 const AI_TIMEOUT_MS = Number(process.env.AI_SERVICE_TIMEOUT_MS || 15000);
+const AI_IMAGE_TIMEOUT_MS = Number(process.env.AI_IMAGE_TIMEOUT_MS || 60000);
 
 class AIServiceError extends Error {
   constructor(message, cause) {
@@ -23,9 +24,9 @@ const emit = (io, event, emergency) => {
   if (io) io.emit(event, { emergencyId: emergency._id, emergency });
 };
 
-const requestJson = async (endpoint, options = {}) => {
+const requestJson = async (endpoint, options = {}, timeoutMs = AI_TIMEOUT_MS) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${AI_BASE_URL}${endpoint}`, { ...options, signal: controller.signal });
     const payload = await response.json().catch(() => ({}));
@@ -49,7 +50,7 @@ const predictImage = async (imagePath) => {
   const bytes = await fs.readFile(imagePath);
   const form = new FormData();
   form.append('image', new Blob([bytes]), path.basename(imagePath));
-  return requestJson('/predict/image', { method: 'POST', body: form });
+  return requestJson('/predict/image', { method: 'POST', body: form }, AI_IMAGE_TIMEOUT_MS);
 };
 
 const distance = (first, second) => {

@@ -1,14 +1,15 @@
-import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
+import MapView from '../components/MapView';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 export default function EmergencySOSPage() {
-  const navigate = useNavigate();
   const { token } = useAuth();
   const fileInputRef = useRef(null);
+  const currentEmergencyId = useRef(null);
 
   const [form, setForm] = useState({
     description: '',
@@ -23,6 +24,11 @@ export default function EmergencySOSPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [submittedEmergency, setSubmittedEmergency] = useState(null);
+  const [victimView, setVictimView] = useState(null);
+  const [resultLoading, setResultLoading] = useState(false);
+  const [servicesLoading, setServicesLoading] = useState(false);
+  const [resultError, setResultError] = useState('');
 
   const locationLabel = useMemo(() => {
     if (form.latitude && form.longitude) {
@@ -91,20 +97,63 @@ export default function EmergencySOSPage() {
     );
   };
 
-  const resetForm = () => {
-    setForm({
-      description: '',
-      latitude: '',
-      longitude: '',
-      contactInfo: '',
-      priority: 'Medium',
-    });
-    setImageFile(null);
-    setImagePreview('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const refreshVictimView = async (emergencyId, { silent = false } = {}) => {
+    if (!emergencyId) return;
+    if (!silent) {
+      setResultLoading(true);
+      setServicesLoading(true);
+    }
+    setResultError('');
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/emergencies/${encodeURIComponent(emergencyId)}/victim-view`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Unable to load emergency response information.');
+      setVictimView(data);
+      setSubmittedEmergency(data.emergency);
+    } catch (loadError) {
+      setResultError(loadError.message || 'Unable to load emergency response information.');
+    } finally {
+      if (!silent) {
+        setResultLoading(false);
+        setServicesLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const socket = io(import.meta.env.VITE_SOCKET_URL || window.location.origin);
+    const eventNames = [
+      'emergency:ai-processing',
+      'emergency:ai-completed',
+      'emergency:verification-required',
+      'emergency:volunteer-assigned',
+      'emergency:facility-recommended',
+      'emergency:status-updated',
+      'emergency:ai-failed',
+    ];
+    const handlers = eventNames.map((eventName) => {
+      const handler = (payload) => {
+        const emergencyId = payload?.emergencyId || payload?.emergency?._id || payload?.emergency?.id;
+        if (!emergencyId || String(emergencyId) !== String(currentEmergencyId.current)) return;
+        if (eventName === 'emergency:ai-processing') {
+          setResultLoading(true);
+          setServicesLoading(true);
+        }
+        refreshVictimView(emergencyId, { silent: eventName !== 'emergency:ai-processing' });
+      };
+      socket.on(eventName, handler);
+      return [eventName, handler];
+    });
+
+    return () => {
+      handlers.forEach(([eventName, handler]) => socket.off(eventName, handler));
+      socket.disconnect();
+    };
+  }, [token]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -149,15 +198,78 @@ export default function EmergencySOSPage() {
         throw new Error(data.message || 'Emergency submission failed.');
       }
 
-      setSuccess('Emergency SOS submitted successfully. It has been queued for review and AI preparation.');
-      resetForm();
-      setTimeout(() => navigate('/dashboard'), 1200);
+      const emergency = data.emergency;
+      const emergencyId = emergency?._id || emergency?.id;
+      currentEmergencyId.current = emergencyId;
+      setSubmittedEmergency({ ...emergency, id: emergencyId });
+      setVictimView(null);
+      setResultLoading(true);
+      setServicesLoading(true);
+      setSuccess('Emergency submitted. AI analysis in progress...');
+      await refreshVictimView(emergencyId);
     } catch (submitError) {
       setError(submitError.message || 'Emergency submission failed.');
     } finally {
       setLoading(false);
     }
   };
+
+  const resultEmergency = victimView?.emergency || submittedEmergency;
+  const aiAssessment = victimView?.aiAssessment;
+  const aiEvidence = resultEmergency?.aiEvidence || {};
+  const probabilities = aiAssessment?.probabilities || resultEmergency?.aiProbabilities || {};
+  const prediction = aiAssessment?.verificationRequired || resultEmergency?.verificationRequired
+    ? 'Verification Required'
+    : aiAssessment?.prediction || resultEmergency?.aiPrediction || '';
+  const aiStatus = aiAssessment?.status || resultEmergency?.aiStatus || '';
+  const aiFailed = ['Failed', 'failed'].includes(aiStatus);
+  const aiInProgress = resultLoading || !aiStatus || ['Pending', 'pending', 'Processing', 'processing'].includes(aiStatus);
+  const services = victimView?.nearbyServices;
+  const mapMarkers = useMemo(() => {
+    if (!resultEmergency || !Number.isFinite(Number(resultEmergency.latitude)) || !Number.isFinite(Number(resultEmergency.longitude))) return [];
+    const emergencyPosition = [Number(resultEmergency.latitude), Number(resultEmergency.longitude)];
+    const serviceMarkers = [
+      ...(services?.hospitals || []).map((service) => ({ ...service, type: 'Hospital', details: `${service.type || 'Hospital'}${service.availableBeds === undefined ? '' : ` · ${service.availableBeds} beds`}` })),
+      ...(services?.shelters || []).map((service) => ({ ...service, type: 'Shelter', details: `${service.availableSlots === undefined ? 'Shelter' : `${service.availableSlots} available slots`}` })),
+      ...(services?.resources || []).map((service) => ({ ...service, type: 'Resource', details: `${service.type || 'Resource'}${service.quantity === undefined ? '' : ` · ${service.quantity} available`}` })),
+    ].filter((service) => Array.isArray(service.coordinates) && service.coordinates.length >= 2)
+      .map((service) => ({
+        id: String(service.id),
+        position: [Number(service.coordinates[1]), Number(service.coordinates[0])],
+        type: service.type,
+        details: `${service.details} · ${Number(service.distanceKm).toFixed(1)} km away`,
+      }));
+
+    return [
+      { id: `sos-${resultEmergency.id}`, position: emergencyPosition, type: 'Your SOS location', details: 'Emergency location' },
+      ...serviceMarkers,
+    ];
+  }, [resultEmergency, services]);
+
+  const formatConfidence = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : 'N/A';
+  const formatProbability = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(1)}%` : 'N/A';
+  const formatDistance = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} km away` : 'N/A';
+  const displayedProbabilities = aiInProgress || aiFailed ? {} : probabilities;
+  const aiEvidenceFor = victimView?.explanation || aiEvidence;
+
+  const renderEvidence = (label, result) => (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
+      {result ? (
+        <p className="mt-1 text-sm text-slate-800">
+          {result.prediction || 'Result unavailable'}
+          {result.confidence === undefined ? '' : ` · ${formatConfidence(result.confidence)}`}
+        </p>
+      ) : <p className="mt-1 text-sm text-slate-600">{label === 'Text analysis' && !resultEmergency?.description ? 'No text analysis was submitted.' : label === 'Image analysis' && !resultEmergency?.imageUrl ? 'No image analysis was submitted.' : 'Analysis evidence is not available.'}</p>}
+    </div>
+  );
+
+  const actionStatusLabel = (status) => ({
+    completed: 'Completed',
+    pending: 'Pending',
+    required: 'Required',
+    not_required: 'Not Required',
+  }[status] || 'N/A');
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -314,7 +426,7 @@ export default function EmergencySOSPage() {
 
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-800 p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Status</p>
-            <p className="mt-2 text-lg font-semibold text-cyan-300">Submitted</p>
+            <p className="mt-2 text-lg font-semibold text-cyan-300">{submittedEmergency?.status || 'Submitted'}</p>
           </div>
 
           {imagePreview ? (
@@ -343,6 +455,179 @@ export default function EmergencySOSPage() {
           </div>
         </aside>
       </div>
+
+      {submittedEmergency && (
+        <div className="mt-6 space-y-6">
+          <section className="rounded-2xl border border-cyan-200 bg-cyan-50 p-5" aria-label="Submitted emergency details">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-cyan-950">Emergency submitted</h2>
+                <p className="mt-1 text-sm text-cyan-900">{resultEmergency?.id || submittedEmergency.id || submittedEmergency._id}</p>
+                <p className="mt-1 text-sm text-cyan-800">
+                  {Number.isFinite(Number(resultEmergency?.latitude)) && Number.isFinite(Number(resultEmergency?.longitude))
+                    ? `${resultEmergency.latitude}, ${resultEmergency.longitude}`
+                    : 'Location N/A'}
+                  {resultEmergency?.createdAt ? ` · ${new Date(resultEmergency.createdAt).toLocaleString()}` : ''}
+                </p>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1 text-sm font-medium text-cyan-900">{resultEmergency?.status || 'Submitted'}</span>
+            </div>
+            {success && <p role="status" className="mt-3 text-sm text-cyan-900">{success}</p>}
+            {resultError && <p role="alert" className="mt-3 text-sm text-rose-700">Response details could not be refreshed: {resultError}</p>}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="model-predictions-heading">
+            <h2 id="model-predictions-heading" className="text-xl font-semibold text-slate-900">Model Predictions</h2>
+            <h3 className="mt-4 text-base font-semibold text-slate-800">AI Emergency Assessment</h3>
+            {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
+              <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950">
+                <p className="font-semibold">Verification Required</p>
+                <p className="mt-1 text-sm">The text and image analysis produced conflicting results. Please verify the emergency information.</p>
+              </div>
+            ) : aiFailed ? (
+              <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">AI analysis is temporarily unavailable.</p>
+            ) : aiInProgress ? (
+              <p className="mt-3 rounded-lg border border-cyan-100 bg-cyan-50 p-4 text-sm text-cyan-900">Analyzing emergency...</p>
+            ) : (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Prediction</p>
+                  <p className="mt-1 font-medium text-slate-900">{prediction || 'N/A'}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Confidence</p>
+                  <p className="mt-1 font-medium text-slate-900">{formatConfidence(aiAssessment?.confidence ?? resultEmergency?.aiConfidence)}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-slate-800">Probability breakdown</h3>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {['Fire', 'Flood', 'Accident'].map((name) => (
+                  <div key={name} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                    <span>{name}</span>
+                    <span className="font-medium">{formatProbability(displayedProbabilities[name])}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {renderEvidence('Text analysis', aiEvidenceFor.textEvidence || aiEvidenceFor.textPrediction)}
+              {renderEvidence('Image analysis', aiEvidenceFor.imageEvidence || aiEvidenceFor.imagePrediction)}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase text-slate-500">Fusion</p>
+                <p className="mt-1 text-sm text-slate-800">
+                  {aiEvidence.fusion?.prediction
+                    ? `${aiEvidence.fusion.prediction}${aiEvidence.fusion.modality ? ` · ${aiEvidence.fusion.modality}` : ''}`
+                    : aiInProgress ? 'Fusion result will appear when analysis completes.' : 'Fusion result is not available.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-slate-200 pt-4">
+              <h3 className="font-semibold text-slate-900">Why this prediction?</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                {resultEmergency?.aiExplanation
+                  || (aiInProgress ? 'The explanation will appear when analysis completes.' : 'AI explanation is not available for this analysis.')}
+              </p>
+              {aiEvidenceFor.textEvidence || aiEvidenceFor.textPrediction ? (
+                <p className="mt-3 text-sm text-slate-600">Text evidence: {aiEvidenceFor.textEvidence?.prediction || aiEvidenceFor.textPrediction?.prediction || 'N/A'}</p>
+              ) : resultEmergency?.description ? (
+                <p className="mt-3 text-sm text-slate-600">Text evidence is not available.</p>
+              ) : null}
+              {aiEvidenceFor.imageEvidence || aiEvidenceFor.imagePrediction ? (
+                <p className="mt-2 text-sm text-slate-600">Image evidence: {aiEvidenceFor.imageEvidence?.prediction || aiEvidenceFor.imagePrediction?.prediction || 'N/A'}</p>
+              ) : resultEmergency?.imageUrl ? (
+                <p className="mt-2 text-sm text-slate-600">Image evidence is not available.</p>
+              ) : null}
+              {!resultEmergency?.description && !resultEmergency?.imageUrl && <p className="mt-3 text-sm text-slate-500">No text or image evidence was submitted.</p>}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="recommended-actions-heading">
+            <h2 id="recommended-actions-heading" className="text-xl font-semibold text-slate-900">Recommended Actions</h2>
+            {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
+              <p className="mt-3 text-sm text-slate-600">Victim guidance is unavailable until the conflicting analysis is verified.</p>
+            ) : aiFailed ? (
+              <p className="mt-3 text-sm text-slate-600">Recommendations are unavailable because AI analysis failed.</p>
+            ) : aiInProgress ? (
+              <p className="mt-3 text-sm text-slate-600">Recommended actions will appear after analysis.</p>
+            ) : victimView?.recommendedActions?.length ? (
+              <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
+                {victimView.recommendedActions.map((action) => <li key={action}>{action}</li>)}
+              </ul>
+            ) : <p className="mt-3 text-sm text-slate-600">No prediction-based actions are available.</p>}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="required-actions-heading">
+            <h2 id="required-actions-heading" className="text-xl font-semibold text-slate-900">Required Emergency Actions</h2>
+            {resultLoading && !victimView ? (
+              <p className="mt-3 text-sm text-slate-600">Loading response workflow...</p>
+            ) : victimView?.requiredEmergencyActions?.length ? (
+              <ul className="mt-3 divide-y divide-slate-100">
+                {victimView.requiredEmergencyActions.map((action) => (
+                  <li key={action.id} className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+                    <span className="text-slate-800">{action.label}</span>
+                    <span className={`font-medium ${action.status === 'completed' ? 'text-emerald-700' : action.status === 'required' ? 'text-rose-700' : action.status === 'pending' ? 'text-amber-700' : 'text-slate-500'}`}>
+                      {actionStatusLabel(action.status)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-3 text-sm text-slate-600">Response workflow information is not available.</p>}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="nearby-services-heading">
+            <h2 id="nearby-services-heading" className="text-xl font-semibold text-slate-900">Nearby Emergency Services</h2>
+            {servicesLoading && !services ? (
+              <p className="mt-3 text-sm text-slate-600">Finding nearby emergency services...</p>
+            ) : (
+              <>
+                {services && !services.hospitals.length && !services.shelters.length && !services.resources.length && (
+                  <p className="mt-3 text-sm text-slate-600">No nearby emergency services found for this location.</p>
+                )}
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  {[
+                    ['Nearby Hospitals', services?.hospitals || [], (service) => `${service.type || 'Hospital'}${service.availableBeds === undefined ? '' : ` · ${service.availableBeds} beds available`}`],
+                    ['Nearby Shelters', services?.shelters || [], (service) => `${service.availableSlots === undefined ? 'Shelter' : `${service.availableSlots} slots available`}`],
+                    ['Nearby Resources', services?.resources || [], (service) => `${service.type || 'Resource'}${service.quantity === undefined ? '' : ` · ${service.quantity} available`}`],
+                  ].map(([title, entries, describe]) => (
+                    <div key={title}>
+                      <h3 className="font-semibold text-slate-800">{title}</h3>
+                      {entries.length ? (
+                        <ul className="mt-2 space-y-2">
+                          {entries.map((service) => (
+                            <li key={service.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                              <p className="font-medium text-slate-900">{service.name || 'N/A'}</p>
+                              <p className="mt-1 text-slate-600">{formatDistance(service.distanceKm)}</p>
+                              <p className="mt-1 text-slate-600">{describe(service)}</p>
+                              {service.contact ? <p className="mt-1 text-slate-600">{service.contact}</p> : null}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p className="mt-2 text-sm text-slate-500">No nearby records.</p>}
+                    </div>
+                  ))}
+                </div>
+                {mapMarkers.length > 0 && (
+                  <div className="mt-5">
+                    <h3 className="mb-2 font-semibold text-slate-800">Service map</h3>
+                    <div className="h-72 overflow-hidden rounded-xl border border-slate-200">
+                      <MapView
+                        center={[Number(resultEmergency.latitude), Number(resultEmergency.longitude)]}
+                        zoom={12}
+                        markers={mapMarkers}
+                      />
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
