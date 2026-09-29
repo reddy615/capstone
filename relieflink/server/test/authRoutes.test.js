@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../src/models/User');
 const authRoutes = require('../src/routes/authRoutes');
 const { protect, authorize } = require('../src/middleware/authMiddleware');
+const { errorHandler } = require('../src/middleware/errorMiddleware');
 const { ROLES, ROLE_LIST } = require('../src/utils/roles');
 
 const usersByEmail = new Map();
@@ -44,6 +45,7 @@ before(async () => {
   app.get('/api/admin/overview', protect, authorize(ROLES.ADMIN), (req, res) => {
     res.status(200).json({ success: true, role: req.user.role });
   });
+  app.use(errorHandler);
 
   server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -70,12 +72,20 @@ const postJson = (path, payload) => fetch(`${baseUrl}${path}`, {
   body: JSON.stringify(payload),
 });
 
-test('normal registration defaults to victim, login works, and protected admin access is denied', async () => {
+test('registration requires a role and a valid public role registers and can log in', async () => {
   const credentials = {
     name: 'Normal Registration Test',
     email: 'normal-registration@example.invalid',
     password: 'normal-registration-password',
   };
+  const missingRoleResponse = await postJson('/api/auth/register', credentials);
+  assert.equal(missingRoleResponse.status, 400);
+  assert.equal(usersByEmail.has(credentials.email), false);
+
+  const emptyRequestResponse = await fetch(`${baseUrl}/api/auth/register`, { method: 'POST' });
+  assert.equal(emptyRequestResponse.status, 400);
+
+  credentials.role = ROLES.VICTIM;
   const registrationResponse = await postJson('/api/auth/register', credentials);
   const registration = await registrationResponse.json();
 
@@ -97,11 +107,11 @@ test('normal registration defaults to victim, login works, and protected admin a
   assert.equal(normalResponse.status, 403);
 });
 
-test('public registration cannot assign any privileged role or grant admin API access', async () => {
-  const privilegedRoles = ROLE_LIST.filter((role) => role !== ROLES.VICTIM);
-  assert.ok(privilegedRoles.includes(ROLES.ADMIN));
+test('public registration rejects invalid and privileged roles without creating accounts', async () => {
+  const unauthorizedRoles = [...ROLE_LIST.filter((role) => role !== ROLES.VICTIM), 'not-a-role'];
+  assert.ok(unauthorizedRoles.includes(ROLES.ADMIN));
 
-  for (const role of privilegedRoles) {
+  for (const role of unauthorizedRoles) {
     const email = `role-escalation-${role}@example.invalid`;
     const response = await postJson('/api/auth/register', {
       name: 'Role Escalation Test',
@@ -111,15 +121,9 @@ test('public registration cannot assign any privileged role or grant admin API a
     });
     const registration = await response.json();
 
-    assert.equal(response.status, 201, `${role} registration remains available`);
-    assert.equal(registration.user.role, ROLES.VICTIM, `${role} request must be downgraded`);
-    assert.equal(usersByEmail.get(email).role, ROLES.VICTIM, `${role} must not be stored`);
-    assert.equal(jwt.verify(registration.token, testJwtSecret).role, undefined);
-
-    const adminResponse = await fetch(`${baseUrl}/api/admin/overview`, {
-      headers: { Authorization: `Bearer ${registration.token}` },
-    });
-    assert.equal(adminResponse.status, 403, `${role} token must not access admin API`);
+    assert.equal(response.status, 400, `${role} registration must be rejected`);
+    assert.equal(usersByEmail.has(email), false, `${role} account must not be created`);
+    assert.equal(registration.token, undefined, `${role} request must not receive a token`);
   }
 });
 

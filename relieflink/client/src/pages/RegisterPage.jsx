@@ -9,16 +9,40 @@ export default function RegisterPage() {
     name: '',
     email: '',
     password: '',
+    role: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const emailInput = e.currentTarget.elements.email;
+    if (!form.name.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
+    if (!form.email.trim() || !emailInput.validity.valid) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!form.password) {
+      setError('Please enter a password.');
+      return;
+    }
+    if (form.password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (!form.role) {
+      setError('Please select your role.');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -56,10 +80,11 @@ export default function RegisterPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Full name</label>
+            <label htmlFor="register-name" className="mb-1 block text-sm font-medium text-slate-700">Full name</label>
             <input
+              id="register-name"
               type="text"
               name="name"
               value={form.name}
@@ -70,8 +95,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
+            <label htmlFor="register-email" className="mb-1 block text-sm font-medium text-slate-700">Email</label>
             <input
+              id="register-email"
               type="email"
               name="email"
               value={form.email}
@@ -82,8 +108,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Password</label>
+            <label htmlFor="register-password" className="mb-1 block text-sm font-medium text-slate-700">Password</label>
             <input
+              id="register-password"
               type="password"
               name="password"
               value={form.password}
@@ -92,6 +119,21 @@ export default function RegisterPage() {
               minLength={6}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-cyan-500"
             />
+          </div>
+
+          <div>
+            <label htmlFor="register-role" className="mb-1 block text-sm font-medium text-slate-700">Role *</label>
+            <select
+              id="register-role"
+              name="role"
+              value={form.role}
+              onChange={handleChange}
+              required
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 outline-none focus:border-cyan-500"
+            >
+              <option value="" disabled>Select your role</option>
+              <option value="victim">Victim</option>
+            </select>
           </div>
 
           <button

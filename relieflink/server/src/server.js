@@ -5,6 +5,7 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const initSocket = require('./config/socket');
 const { startAIService, stopAIService } = require('./services/aiProcess');
+const { bootstrapAdmin } = require('./services/adminBootstrap');
 
 const PORT = process.env.PORT || 5000;
 
@@ -13,6 +14,13 @@ app.set('io', initSocket(server));
 let aiProcess;
 
 const startServer = async () => {
+  await connectDB();
+
+  const bootstrapResult = await bootstrapAdmin();
+  if (bootstrapResult.status !== 'skipped') {
+    console.log(`Admin bootstrap: ${bootstrapResult.status}`);
+  }
+
   try {
     aiProcess = await startAIService();
     app.set('aiProcess', aiProcess);
@@ -22,8 +30,6 @@ const startServer = async () => {
     app.set('aiProcess', null);
     app.set('aiServiceError', error.message);
   }
-
-  await connectDB();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

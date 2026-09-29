@@ -8,5 +8,6 @@ const ROLES = {
 };
 
 const ROLE_LIST = Object.values(ROLES);
+const PUBLIC_REGISTRATION_ROLES = [ROLES.VICTIM];
 
-module.exports = { ROLES, ROLE_LIST };
+module.exports = { ROLES, ROLE_LIST, PUBLIC_REGISTRATION_ROLES };

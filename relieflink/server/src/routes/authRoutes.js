@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { ROLES } = require('../utils/roles');
+const { PUBLIC_REGISTRATION_ROLES } = require('../utils/roles');
 const { protect } = require('../middleware/authMiddleware');
 const AppError = require('../utils/appError');
 
@@ -15,22 +15,40 @@ const generateToken = (id) => {
 
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, role, phone } = req.body || {};
+    const normalizedName = typeof name === 'string' ? name.trim() : '';
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
-    if (!name || !email || !password) {
+    if (!normalizedName || !normalizedEmail || typeof password !== 'string' || !password) {
       return next(new AppError('Name, email, and password are required', 400));
     }
 
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return next(new AppError('Please provide a valid email address', 400));
+    }
+
+    if (password.length < 6) {
+      return next(new AppError('Password must be at least 6 characters', 400));
+    }
+
+    if (!role) {
+      return next(new AppError('Role is required', 400));
+    }
+
+    if (typeof role !== 'string' || !PUBLIC_REGISTRATION_ROLES.includes(role)) {
+      return next(new AppError('Invalid role for public registration', 400));
+    }
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return next(new AppError('User already exists', 400));
     }
 
     const user = await User.create({
-      name,
-      email: email.toLowerCase(),
+      name: normalizedName,
+      email: normalizedEmail,
       password,
-      role: ROLES.VICTIM,
+      role,
       phone: phone || '',
     });
 
