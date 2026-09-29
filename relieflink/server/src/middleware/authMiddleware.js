@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const AppError = require('../utils/appError');
+const { APPROVAL_REQUIRED_ROLES } = require('../utils/roles');
 
 const protect = async (req, res, next) => {
   try {
@@ -39,6 +40,10 @@ const authorize = (...roles) => (req, res, next) => {
 
   if (!roles.includes(req.user.role)) {
     return next(new AppError('You do not have permission to access this resource', 403));
+  }
+
+  if (APPROVAL_REQUIRED_ROLES.includes(req.user.role) && req.user.approvalStatus !== 'approved') {
+    return next(new AppError('Your account requires admin approval before operational access.', 403));
   }
 
   next();

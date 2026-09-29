@@ -74,6 +74,7 @@ export default function AdminPage() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [updatingUserId, setUpdatingUserId] = useState('');
 
   useEffect(() => {
     if (!token || !user) return;
@@ -124,6 +125,28 @@ export default function AdminPage() {
     });
     return totals;
   }, [users]);
+
+  const updateApprovalStatus = async (userId, approvalStatus) => {
+    setUpdatingUserId(userId);
+    setError('');
+    try {
+      const response = await fetch(`${apiBase}/admin/users/${userId}/approval`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ approvalStatus }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Unable to update account approval');
+      setUsers((currentUsers) => currentUsers.map((entry) => entry.id === userId ? data.user : entry));
+    } catch (approvalError) {
+      setError(approvalError.message || 'Unable to update account approval');
+    } finally {
+      setUpdatingUserId('');
+    }
+  };
 
   const renderOverview = () => {
     if (!overview) return <LoadingState />;
@@ -189,7 +212,9 @@ export default function AdminPage() {
               <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Role</th>
               <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Approval</th>
               <th className="px-3 py-2">Created</th>
+              <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -199,7 +224,30 @@ export default function AdminPage() {
                 <td className="px-3 py-2">{entry.email}</td>
                 <td className="px-3 py-2 capitalize">{entry.role}</td>
                 <td className="px-3 py-2">{entry.isActive ? 'Active' : 'Inactive'}</td>
+                <td className="px-3 py-2 capitalize">{entry.approvalStatus || 'not required'}</td>
                 <td className="px-3 py-2">{formatDate(entry.createdAt)}</td>
+                <td className="px-3 py-2">
+                  {entry.approvalStatus && entry.approvalStatus !== 'not_required' ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={updatingUserId === entry.id || entry.approvalStatus === 'approved'}
+                        onClick={() => updateApprovalStatus(entry.id, 'approved')}
+                        className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={updatingUserId === entry.id || entry.approvalStatus === 'rejected'}
+                        onClick={() => updateApprovalStatus(entry.id, 'rejected')}
+                        className="rounded-md bg-rose-700 px-2 py-1 text-xs font-medium text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

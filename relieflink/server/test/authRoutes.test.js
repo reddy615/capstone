@@ -7,7 +7,7 @@ const User = require('../src/models/User');
 const authRoutes = require('../src/routes/authRoutes');
 const { protect, authorize } = require('../src/middleware/authMiddleware');
 const { errorHandler } = require('../src/middleware/errorMiddleware');
-const { ROLES, ROLE_LIST } = require('../src/utils/roles');
+const { ROLES, PUBLIC_REGISTRATION_ROLES } = require('../src/utils/roles');
 
 const usersByEmail = new Map();
 const usersById = new Map();
@@ -43,6 +43,9 @@ before(async () => {
   app.use(express.json());
   app.use('/api/auth', authRoutes);
   app.get('/api/admin/overview', protect, authorize(ROLES.ADMIN), (req, res) => {
+    res.status(200).json({ success: true, role: req.user.role });
+  });
+  app.get('/api/operational', protect, authorize(ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL), (req, res) => {
     res.status(200).json({ success: true, role: req.user.role });
   });
   app.use(errorHandler);
@@ -107,9 +110,67 @@ test('registration requires a role and a valid public role registers and can log
   assert.equal(normalResponse.status, 403);
 });
 
-test('public registration rejects invalid and privileged roles without creating accounts', async () => {
-  const unauthorizedRoles = [...ROLE_LIST.filter((role) => role !== ROLES.VICTIM), 'not-a-role'];
-  assert.ok(unauthorizedRoles.includes(ROLES.ADMIN));
+test('public operational roles are stored pending and blocked until approved', async () => {
+  assert.deepEqual(PUBLIC_REGISTRATION_ROLES, [ROLES.VICTIM, ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL]);
+  const publicOperationalRoles = [ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL];
+
+  for (const role of publicOperationalRoles) {
+    const email = `pending-${role}@example.invalid`;
+    const response = await postJson('/api/auth/register', {
+      name: `${role} Registration Test`,
+      email,
+      password: 'pending-registration-password',
+      role,
+      approvalStatus: 'approved',
+      isActive: true,
+    });
+    const registration = await response.json();
+    const storedUser = usersByEmail.get(email);
+
+    assert.equal(response.status, 201);
+    assert.equal(registration.user.role, role);
+    assert.equal(registration.user.approvalStatus, 'pending');
+    assert.equal(storedUser.role, role);
+    assert.equal(storedUser.approvalStatus, 'pending');
+    assert.equal(registration.token, undefined);
+
+    const loginResponse = await postJson('/api/auth/login', { email, password: 'pending-registration-password' });
+    assert.equal(loginResponse.status, 403);
+
+    const token = jwt.sign({ id: storedUser._id, role: ROLES.ADMIN }, testJwtSecret);
+    const pendingOperationalResponse = await fetch(`${baseUrl}/api/operational`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const forgedAdminResponse = await fetch(`${baseUrl}/api/admin/overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(pendingOperationalResponse.status, 403);
+    assert.equal(forgedAdminResponse.status, 403);
+
+    storedUser.approvalStatus = 'approved';
+    const approvedOperationalResponse = await fetch(`${baseUrl}/api/operational`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(approvedOperationalResponse.status, 200);
+
+    const approvedForgedAdminResponse = await fetch(`${baseUrl}/api/admin/overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(approvedForgedAdminResponse.status, 403);
+
+    const approvedLoginResponse = await postJson('/api/auth/login', {
+      email,
+      password: 'pending-registration-password',
+    });
+    const approvedLogin = await approvedLoginResponse.json();
+    assert.equal(approvedLoginResponse.status, 200);
+    assert.equal(approvedLogin.user.role, role);
+    assert.equal(jwt.verify(approvedLogin.token, testJwtSecret).role, undefined);
+  }
+});
+
+test('public registration rejects admin, authority, empty, and unknown roles', async () => {
+  const unauthorizedRoles = [ROLES.ADMIN, ROLES.AUTHORITY, 'superadmin', 'not-a-role', ''];
 
   for (const role of unauthorizedRoles) {
     const email = `role-escalation-${role}@example.invalid`;
@@ -121,7 +182,7 @@ test('public registration rejects invalid and privileged roles without creating 
     });
     const registration = await response.json();
 
-    assert.equal(response.status, 400, `${role} registration must be rejected`);
+    assert.equal(response.status, 400, `${role || 'empty'} registration must be rejected`);
     assert.equal(usersByEmail.has(email), false, `${role} account must not be created`);
     assert.equal(registration.token, undefined, `${role} request must not receive a token`);
   }

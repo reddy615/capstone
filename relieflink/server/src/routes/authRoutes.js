@@ -1,7 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { PUBLIC_REGISTRATION_ROLES } = require('../utils/roles');
+const { PUBLIC_REGISTRATION_ROLES, APPROVAL_REQUIRED_ROLES } = require('../utils/roles');
 const { protect } = require('../middleware/authMiddleware');
 const AppError = require('../utils/appError');
 
@@ -49,21 +49,29 @@ router.post('/register', async (req, res, next) => {
       email: normalizedEmail,
       password,
       role,
+      approvalStatus: APPROVAL_REQUIRED_ROLES.includes(role) ? 'pending' : 'not_required',
       phone: phone || '',
     });
 
-    const token = generateToken(user._id);
-
-    res.status(201).json({
+    const response = {
       success: true,
-      token,
+      approvalStatus: user.approvalStatus,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
+        approvalStatus: user.approvalStatus,
       },
-    });
+    };
+
+    if (user.approvalStatus === 'pending') {
+      response.message = 'Registration submitted. Admin approval is required before operational access.';
+    } else {
+      response.token = generateToken(user._id);
+    }
+
+    res.status(201).json(response);
   } catch (error) {
     next(error);
   }
@@ -87,6 +95,13 @@ router.post('/login', async (req, res, next) => {
       return next(new AppError('Invalid email or password', 401));
     }
 
+    if (APPROVAL_REQUIRED_ROLES.includes(user.role) && user.approvalStatus !== 'approved') {
+      return next(new AppError(
+        user.approvalStatus === 'rejected' ? 'Your account was not approved.' : 'Your account is pending admin approval.',
+        403
+      ));
+    }
+
     const token = generateToken(user._id);
 
     res.status(200).json({
@@ -97,6 +112,7 @@ router.post('/login', async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        approvalStatus: user.approvalStatus,
       },
     });
   } catch (error) {
@@ -113,6 +129,7 @@ router.get('/me', protect, async (req, res, next) => {
         name: req.user.name,
         email: req.user.email,
         role: req.user.role,
+        approvalStatus: req.user.approvalStatus,
         phone: req.user.phone,
       },
     });

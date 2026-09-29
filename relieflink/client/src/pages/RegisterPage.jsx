@@ -12,11 +12,13 @@ export default function RegisterPage() {
     role: '',
   });
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setError('');
+    setNotice('');
   };
 
   const handleSubmit = async (e) => {
@@ -59,6 +61,14 @@ export default function RegisterPage() {
         throw new Error(data.message || 'Registration failed');
       }
 
+      if (data.approvalStatus === 'pending') {
+        setNotice(data.message || 'Registration submitted. Admin approval is required before operational access.');
+        setForm({ name: '', email: '', password: '', role: '' });
+        return;
+      }
+
+      if (!data.token) throw new Error('Registration succeeded without a sign-in token. Please log in.');
+
       login(data.user, data.token);
       navigate('/dashboard');
     } catch (err) {
@@ -77,6 +87,11 @@ export default function RegisterPage() {
         {error && (
           <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
             {error}
+          </div>
+        )}
+        {notice && (
+          <div role="status" className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            {notice}
           </div>
         )}
 
@@ -133,6 +148,9 @@ export default function RegisterPage() {
             >
               <option value="" disabled>Select your role</option>
               <option value="victim">Victim</option>
+              <option value="volunteer">Volunteer</option>
+              <option value="ngo">NGO</option>
+              <option value="hospital">Hospital</option>
             </select>
           </div>
 

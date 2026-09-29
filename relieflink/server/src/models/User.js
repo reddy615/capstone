@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const { ROLES } = require('../utils/roles');
+const { ROLES, APPROVAL_REQUIRED_ROLES } = require('../utils/roles');
 
 const userSchema = new mongoose.Schema(
   {
@@ -25,6 +25,13 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: Object.values(ROLES),
       default: ROLES.VICTIM,
+    },
+    approvalStatus: {
+      type: String,
+      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      default() {
+        return APPROVAL_REQUIRED_ROLES.includes(this.role) ? 'pending' : 'not_required';
+      },
     },
     phone: {
       type: String,

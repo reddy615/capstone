@@ -5,6 +5,7 @@ const multer = require('multer');
 const Emergency = require('../models/Emergency');
 const Volunteer = require('../models/Volunteer');
 const { protect, authorize } = require('../middleware/authMiddleware');
+const { APPROVAL_REQUIRED_ROLES } = require('../utils/roles');
 const { CLASS_NAMES, findRecommendations, processEmergencyAI, priorityFor } = require('../services/aiIntegrationService');
 const AppError = require('../utils/appError');
 
@@ -175,7 +176,9 @@ router.post('/', protect, upload.single('image'), async (req, res, next) => {
 
 const canViewEmergency = async (emergency, user) => {
   const isOwner = emergency.userId && emergency.userId.toString() === user._id.toString();
-  if (isOwner || ['admin', 'authority', 'ngo', 'hospital'].includes(user.role)) return true;
+  if (isOwner) return true;
+  if (APPROVAL_REQUIRED_ROLES.includes(user.role) && user.approvalStatus !== 'approved') return false;
+  if (['admin', 'authority', 'ngo', 'hospital'].includes(user.role)) return true;
   if (user.role !== 'volunteer') return false;
   const volunteer = await Volunteer.findOne({ user: user._id });
   const assignedId = emergency.assignedVolunteer?._id || emergency.assignedVolunteer;

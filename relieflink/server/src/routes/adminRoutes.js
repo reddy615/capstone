@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { protect, authorize } = require('../middleware/authMiddleware');
-const { ROLES } = require('../utils/roles');
+const { ROLES, APPROVAL_REQUIRED_ROLES } = require('../utils/roles');
 const User = require('../models/User');
 const Emergency = require('../models/Emergency');
 const Volunteer = require('../models/Volunteer');
@@ -20,6 +20,7 @@ const safeUser = (user) => ({
   phone: user.phone || '',
   role: user.role,
   isActive: user.isActive,
+  approvalStatus: user.approvalStatus || (APPROVAL_REQUIRED_ROLES.includes(user.role) ? 'pending' : 'not_required'),
   createdAt: user.createdAt,
   lastLoginAt: user.lastLoginAt || null,
   location: user.location || null,
@@ -209,6 +210,27 @@ router.get('/users', async (req, res, next) => {
       count: users.length,
       users: users.map(safeUser),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/users/:id/approval', async (req, res, next) => {
+  try {
+    const { approvalStatus } = req.body || {};
+    if (!['approved', 'rejected'].includes(approvalStatus)) {
+      return next(new AppError('Approval status must be approved or rejected.', 400));
+    }
+
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) return next(new AppError('User not found.', 404));
+    if (!APPROVAL_REQUIRED_ROLES.includes(user.role)) {
+      return next(new AppError('This account does not require role approval.', 400));
+    }
+
+    user.approvalStatus = approvalStatus;
+    await user.save();
+    res.status(200).json({ success: true, user: safeUser(user) });
   } catch (error) {
     next(error);
   }
