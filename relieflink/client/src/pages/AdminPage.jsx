@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import DashboardPage from './DashboardPage';
 
 const navItems = [
   { label: 'Overview', href: '/admin' },
@@ -59,7 +60,9 @@ function LoadingState() {
 export default function AdminPage() {
   const { user, token } = useAuth();
   const location = useLocation();
-  const section = location.pathname.replace('/admin', '') || '/';
+  const section = location.pathname === '/dashboard' || location.pathname === '/emergencies'
+    ? '/emergencies'
+    : location.pathname.replace('/admin', '') || '/';
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -608,7 +611,12 @@ export default function AdminPage() {
       content = renderUsers();
       break;
     case '/emergencies':
-      content = renderEmergencies();
+      content = (
+        <div className="space-y-6">
+          <DashboardPage />
+          {renderEmergencies()}
+        </div>
+      );
       break;
     case '/analytics':
       content = renderAnalytics();
@@ -668,7 +676,7 @@ export default function AdminPage() {
                 <NavLink
                   key={item.href}
                   to={item.href}
-                  className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive ? 'bg-cyan-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+                  className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm font-medium transition ${isActive || (item.href === '/admin/emergencies' && section === '/emergencies') ? 'bg-cyan-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
                 >
                   {item.label}
                 </NavLink>

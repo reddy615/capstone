@@ -42,6 +42,11 @@ function AdminRoute({ children }) {
   return children;
 }
 
+function DashboardRoute() {
+  const { user } = useAuth();
+  return user?.role === 'admin' ? <AdminPage /> : <DashboardPage />;
+}
+
 function AppRoutes() {
   return (
     <Layout>
@@ -53,7 +58,7 @@ function AppRoutes() {
           path="/dashboard"
           element={
             <ProtectedRoute>
-              <DashboardPage />
+              <DashboardRoute />
             </ProtectedRoute>
           }
         />
@@ -61,7 +66,7 @@ function AppRoutes() {
           path="/emergencies"
           element={
             <ProtectedRoute>
-              <DashboardPage />
+              <DashboardRoute />
             </ProtectedRoute>
           }
         />
