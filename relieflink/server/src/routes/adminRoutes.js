@@ -13,6 +13,12 @@ const AppError = require('../utils/appError');
 
 const router = express.Router();
 
+const safeProbabilities = (value) => {
+  if (!value || typeof value !== 'object') return {};
+  if (typeof value[Symbol.iterator] === 'function') return Object.fromEntries(value);
+  return { ...value };
+};
+
 const safeUser = (user) => ({
   id: user._id,
   name: user.name,
@@ -49,7 +55,7 @@ const safeEmergency = (emergency) => ({
   aiStatus: emergency.aiStatus,
   aiPrediction: emergency.aiPrediction || '',
   aiConfidence: emergency.aiConfidence,
-  aiProbabilities: emergency.aiProbabilities ? Object.fromEntries(emergency.aiProbabilities) : {},
+  aiProbabilities: safeProbabilities(emergency.aiProbabilities),
   aiExplanation: emergency.aiExplanation || '',
   aiEvidence: emergency.aiEvidence || null,
   aiModalityContribution: emergency.aiModalityContribution || null,
@@ -204,10 +210,55 @@ router.get('/profile', async (req, res) => {
 
 router.get('/users', async (req, res, next) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 }).lean();
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const role = typeof req.query.role === 'string' ? req.query.role.trim().toLowerCase() : '';
+    const status = typeof req.query.status === 'string' ? req.query.status.trim().toLowerCase() : '';
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+    const publicAndAdminRoles = [ROLES.VICTIM, ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL, ROLES.ADMIN];
+    const supportedStatuses = ['active', 'inactive', 'pending', 'rejected'];
+
+    if (role && !publicAndAdminRoles.includes(role)) {
+      return next(new AppError('Invalid user role filter.', 400));
+    }
+    if (status && !supportedStatuses.includes(status)) {
+      return next(new AppError('Invalid user status filter.', 400));
+    }
+
+    const filter = {};
+    if (role) filter.role = role;
+    if (status === 'active') filter.isActive = true;
+    if (status === 'inactive') filter.isActive = false;
+    if (status === 'pending') {
+      filter.$or = [
+        { approvalStatus: 'pending' },
+        { approvalStatus: { $exists: false }, role: { $in: APPROVAL_REQUIRED_ROLES } },
+      ];
+    }
+    if (status === 'rejected') filter.approvalStatus = 'rejected';
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchConditions = [
+        { name: { $regex: escapedSearch, $options: 'i' } },
+        { email: { $regex: escapedSearch, $options: 'i' } },
+      ];
+      if (mongoose.isValidObjectId(search)) {
+        searchConditions.push({ _id: new mongoose.Types.ObjectId(search) });
+      }
+      filter.$and = [{ $or: searchConditions }];
+    }
+
+    const [users, total] = await Promise.all([
+      User.find(filter).select('-password').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      User.countDocuments(filter),
+    ]);
     res.status(200).json({
       success: true,
-      count: users.length,
+      count: total,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
       users: users.map(safeUser),
     });
   } catch (error) {

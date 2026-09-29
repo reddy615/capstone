@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 
 const User = require('../src/models/User');
 const authRoutes = require('../src/routes/authRoutes');
+const adminRoutes = require('../src/routes/adminRoutes');
 const { protect, authorize } = require('../src/middleware/authMiddleware');
 const { errorHandler } = require('../src/middleware/errorMiddleware');
 const { ROLES, PUBLIC_REGISTRATION_ROLES } = require('../src/utils/roles');
@@ -15,6 +16,8 @@ const originalMethods = {
   create: User.create,
   findOne: User.findOne,
   findById: User.findById,
+  find: User.find,
+  countDocuments: User.countDocuments,
 };
 const originalJwtSecret = process.env.JWT_SECRET;
 const testJwtSecret = 'registration-route-test-secret';
@@ -38,6 +41,14 @@ before(async () => {
   User.findOne = async ({ email }) => usersByEmail.get(email) || null;
   User.create = addUser;
   User.findById = (id) => ({ select: async () => usersById.get(String(id)) || null });
+  User.find = () => ({
+    select() { return this; },
+    sort() { return this; },
+    skip() { return this; },
+    limit() { return this; },
+    lean: async () => [...usersByEmail.values()],
+  });
+  User.countDocuments = async () => usersByEmail.size;
 
   const app = express();
   app.use(express.json());
@@ -45,6 +56,7 @@ before(async () => {
   app.get('/api/admin/overview', protect, authorize(ROLES.ADMIN), (req, res) => {
     res.status(200).json({ success: true, role: req.user.role });
   });
+  app.use('/api/admin', adminRoutes);
   app.get('/api/operational', protect, authorize(ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL), (req, res) => {
     res.status(200).json({ success: true, role: req.user.role });
   });
@@ -65,6 +77,8 @@ after(async () => {
   User.create = originalMethods.create;
   User.findOne = originalMethods.findOne;
   User.findById = originalMethods.findById;
+  User.find = originalMethods.find;
+  User.countDocuments = originalMethods.countDocuments;
   if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
   else process.env.JWT_SECRET = originalJwtSecret;
 });
@@ -186,6 +200,50 @@ test('public registration rejects admin, authority, empty, and unknown roles', a
     assert.equal(usersByEmail.has(email), false, `${role} account must not be created`);
     assert.equal(registration.token, undefined, `${role} request must not receive a token`);
   }
+});
+
+test('four public role registrations appear in the protected admin users API', async () => {
+  const adminCredentials = {
+    name: 'Admin User List Test',
+    email: 'admin-user-list@example.invalid',
+    password: 'admin-user-list-password',
+  };
+  const admin = await addUser({ ...adminCredentials, role: ROLES.ADMIN, approvalStatus: 'not_required', isActive: true });
+  const rolesToRegister = [ROLES.VICTIM, ROLES.VOLUNTEER, ROLES.NGO, ROLES.HOSPITAL];
+  const testEmails = new Map();
+
+  for (const role of rolesToRegister) {
+    const email = `admin-list-${role}@example.invalid`;
+    testEmails.set(role, email);
+    const response = await postJson('/api/auth/register', {
+      name: `Admin List ${role}`,
+      email,
+      password: 'admin-list-test-password',
+      role,
+    });
+    assert.equal(response.status, 201);
+  }
+
+  const adminLoginResponse = await postJson('/api/auth/login', {
+    email: adminCredentials.email,
+    password: adminCredentials.password,
+  });
+  const adminLogin = await adminLoginResponse.json();
+  assert.equal(adminLoginResponse.status, 200);
+
+  const listResponse = await fetch(`${baseUrl}/api/admin/users`, {
+    headers: { Authorization: `Bearer ${adminLogin.token}` },
+  });
+  const list = await listResponse.json();
+  assert.equal(listResponse.status, 200);
+  for (const [role, email] of testEmails) {
+    const entry = list.users.find((candidate) => candidate.email === email);
+    assert.ok(entry, `${role} registration should appear in the admin users list`);
+    assert.equal(entry.role, role);
+  }
+  assert.ok(list.users.some((entry) => String(entry.id) === String(admin._id)));
+  assert.equal(JSON.stringify(list).toLowerCase().includes('password'), false);
+  assert.equal(JSON.stringify(list).toLowerCase().includes('token'), false);
 });
 
 test('an existing server-created admin can log in and access the admin API', async () => {

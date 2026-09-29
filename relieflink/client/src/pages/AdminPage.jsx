@@ -62,6 +62,17 @@ export default function AdminPage() {
   const section = location.pathname.replace('/admin', '') || '/';
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const [userPageInfo, setUserPageInfo] = useState({ total: 0, totalPages: 0, limit: 20 });
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('');
+  const [userStatusFilter, setUserStatusFilter] = useState('');
+  const [usersRefreshKey, setUsersRefreshKey] = useState(0);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUserLoading, setSelectedUserLoading] = useState(false);
+  const [selectedUserError, setSelectedUserError] = useState('');
   const [emergencies, setEmergencies] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [volunteers, setVolunteers] = useState([]);
@@ -82,9 +93,8 @@ export default function AdminPage() {
       try {
         setLoading(true);
         setError('');
-        const [overviewData, usersData, emergenciesData, analyticsData, volunteersData, hospitalsData, sheltersData, resourcesData, activityData, auditLogsData, systemData, profileData] = await Promise.all([
+        const [overviewData, emergenciesData, analyticsData, volunteersData, hospitalsData, sheltersData, resourcesData, activityData, auditLogsData, systemData, profileData] = await Promise.all([
           fetchAdminJson('/admin/overview', token),
-          fetchAdminJson('/admin/users', token),
           fetchAdminJson('/admin/emergencies', token),
           fetchAdminJson('/admin/analytics', token),
           fetchAdminJson('/admin/volunteers', token),
@@ -97,7 +107,6 @@ export default function AdminPage() {
           fetchAdminJson('/admin/profile', token),
         ]);
         setOverview(overviewData.overview);
-        setUsers(usersData.users || []);
         setEmergencies(emergenciesData.emergencies || []);
         setAnalytics(analyticsData.analytics || null);
         setVolunteers(volunteersData.volunteers || []);
@@ -117,6 +126,38 @@ export default function AdminPage() {
 
     load();
   }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user || section !== '/users') return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setUsersLoading(true);
+      setUsersError('');
+      try {
+        const params = new URLSearchParams({ page: String(userPage), limit: String(userPageInfo.limit) });
+        if (userSearch.trim()) params.set('search', userSearch.trim());
+        if (userRoleFilter) params.set('role', userRoleFilter);
+        if (userStatusFilter) params.set('status', userStatusFilter);
+        const response = await fetch(`${apiBase}/admin/users?${params.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Unable to load users');
+        if (cancelled) return;
+        setUsers(data.users || []);
+        setUserPageInfo({ total: data.total ?? data.count ?? 0, totalPages: data.totalPages ?? 0, limit: data.limit ?? 20 });
+      } catch (loadError) {
+        if (!cancelled) setUsersError(loadError.message || 'Unable to load users');
+      } finally {
+        if (!cancelled) setUsersLoading(false);
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [token, user, section, userPage, userPageInfo.limit, userSearch, userRoleFilter, userStatusFilter, usersRefreshKey]);
 
   const roleCounts = useMemo(() => {
     const totals = { admin: 0, victim: 0, volunteer: 0, ngo: 0, hospital: 0, authority: 0 };
@@ -140,12 +181,31 @@ export default function AdminPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Unable to update account approval');
-      setUsers((currentUsers) => currentUsers.map((entry) => entry.id === userId ? data.user : entry));
+      setUsersRefreshKey((currentKey) => currentKey + 1);
     } catch (approvalError) {
       setError(approvalError.message || 'Unable to update account approval');
     } finally {
       setUpdatingUserId('');
     }
+  };
+
+  const openUserDetails = async (userId) => {
+    setSelectedUser({ id: userId });
+    setSelectedUserLoading(true);
+    setSelectedUserError('');
+    try {
+      const data = await fetchAdminJson(`/admin/users/${encodeURIComponent(userId)}`, token);
+      setSelectedUser(data);
+    } catch (detailError) {
+      setSelectedUserError(detailError.message || 'Unable to load user details');
+    } finally {
+      setSelectedUserLoading(false);
+    }
+  };
+
+  const changeUserFilter = (setter, value) => {
+    setter(value);
+    setUserPage(1);
   };
 
   const renderOverview = () => {
@@ -200,9 +260,34 @@ export default function AdminPage() {
 
   const renderUsers = () => (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-slate-900">Users</h3>
-        <span className="text-sm text-slate-500">{users.length} records</span>
+        <span className="text-sm text-slate-500">{userPageInfo.total} records</span>
+      </div>
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_180px]">
+        <input
+          type="search"
+          value={userSearch}
+          onChange={(event) => changeUserFilter(setUserSearch, event.target.value)}
+          placeholder="Search users..."
+          aria-label="Search users by name, email, or user ID"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-cyan-600"
+        />
+        <select aria-label="Filter users by role" value={userRoleFilter} onChange={(event) => changeUserFilter(setUserRoleFilter, event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="">All roles</option>
+          <option value="victim">Victim</option>
+          <option value="volunteer">Volunteer</option>
+          <option value="ngo">NGO</option>
+          <option value="hospital">Hospital</option>
+          <option value="admin">Admin</option>
+        </select>
+        <select aria-label="Filter users by status" value={userStatusFilter} onChange={(event) => changeUserFilter(setUserStatusFilter, event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+        </select>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -212,47 +297,86 @@ export default function AdminPage() {
               <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Role</th>
               <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Approval</th>
-              <th className="px-3 py-2">Created</th>
+              <th className="px-3 py-2">Registered</th>
               <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {users.map((entry) => (
-              <tr key={entry.id} className="border-t border-slate-100">
-                <td className="px-3 py-2">{entry.name}</td>
-                <td className="px-3 py-2">{entry.email}</td>
-                <td className="px-3 py-2 capitalize">{entry.role}</td>
-                <td className="px-3 py-2">{entry.isActive ? 'Active' : 'Inactive'}</td>
-                <td className="px-3 py-2 capitalize">{entry.approvalStatus || 'not required'}</td>
-                <td className="px-3 py-2">{formatDate(entry.createdAt)}</td>
+            {usersLoading ? (
+              <tr><td colSpan="6" className="px-3 py-8 text-center text-slate-500">Loading...</td></tr>
+            ) : usersError ? (
+              <tr><td colSpan="6" className="px-3 py-8 text-center text-rose-700">{usersError}</td></tr>
+            ) : users.length === 0 ? (
+              <tr><td colSpan="6" className="px-3 py-8 text-center text-slate-500">No users found</td></tr>
+            ) : users.map((entry) => (
+              <tr
+                key={entry.id}
+                tabIndex={0}
+                role="button"
+                onClick={() => openUserDetails(entry.id)}
+                onKeyDown={(event) => { if (event.key === 'Enter') openUserDetails(entry.id); }}
+                className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 focus:bg-slate-50"
+              >
+                <td className="px-3 py-2 font-medium text-cyan-800">{entry.name || 'N/A'}</td>
+                <td className="px-3 py-2">{entry.email || 'N/A'}</td>
+                <td className="px-3 py-2 capitalize">{entry.role || 'N/A'}</td>
+                <td className="px-3 py-2">{entry.isActive === true ? 'Active' : entry.isActive === false ? 'Inactive' : 'N/A'}<span className="block text-xs capitalize text-slate-500">{entry.approvalStatus === 'not_required' ? 'Approval not required' : entry.approvalStatus || 'N/A'}</span></td>
+                <td className="px-3 py-2">{entry.createdAt ? formatDate(entry.createdAt) : 'N/A'}</td>
                 <td className="px-3 py-2">
-                  {entry.approvalStatus && entry.approvalStatus !== 'not_required' ? (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={updatingUserId === entry.id || entry.approvalStatus === 'approved'}
-                        onClick={() => updateApprovalStatus(entry.id, 'approved')}
-                        className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={updatingUserId === entry.id || entry.approvalStatus === 'rejected'}
-                        onClick={() => updateApprovalStatus(entry.id, 'rejected')}
-                        className="rounded-md bg-rose-700 px-2 py-1 text-xs font-medium text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={(event) => { event.stopPropagation(); openUserDetails(entry.id); }} className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100">Details</button>
+                    {entry.approvalStatus && entry.approvalStatus !== 'not_required' ? (
+                      <>
+                        <button type="button" disabled={updatingUserId === entry.id || entry.approvalStatus === 'approved'} onClick={(event) => { event.stopPropagation(); updateApprovalStatus(entry.id, 'approved'); }} className="rounded-md bg-emerald-700 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50">Approve</button>
+                        <button type="button" disabled={updatingUserId === entry.id || entry.approvalStatus === 'rejected'} onClick={(event) => { event.stopPropagation(); updateApprovalStatus(entry.id, 'rejected'); }} className="rounded-md bg-rose-700 px-2 py-1 text-xs font-medium text-white hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50">Reject</button>
+                      </>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <div className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-600">
+        <span>Page {userPage} of {Math.max(1, userPageInfo.totalPages)}</span>
+        <div className="flex gap-2">
+          <button type="button" disabled={userPage <= 1 || usersLoading} onClick={() => setUserPage((page) => page - 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50">Previous</button>
+          <button type="button" disabled={userPage >= userPageInfo.totalPages || usersLoading} onClick={() => setUserPage((page) => page + 1)} className="rounded-md border border-slate-300 px-3 py-1.5 disabled:opacity-50">Next</button>
+        </div>
+      </div>
+      {selectedUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="presentation" onClick={() => setSelectedUser(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="user-detail-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <h3 id="user-detail-title" className="text-xl font-semibold text-slate-900">User details</h3>
+              <button type="button" onClick={() => setSelectedUser(null)} aria-label="Close user details" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm">Close</button>
+            </div>
+            {selectedUserLoading ? <p className="text-sm text-slate-600">Loading...</p> : selectedUserError ? <p className="text-sm text-rose-700">{selectedUserError}</p> : selectedUser.user ? (
+              <div className="grid gap-4 text-sm sm:grid-cols-2">
+                {[
+                  ['Full name', selectedUser.user.name],
+                  ['Email', selectedUser.user.email],
+                  ['Phone', selectedUser.user.phone],
+                  ['User ID', selectedUser.user.id],
+                  ['Role', selectedUser.user.role],
+                  ['Account status', selectedUser.user.isActive === true ? 'Active' : selectedUser.user.isActive === false ? 'Inactive' : null],
+                  ['Approval status', selectedUser.user.approvalStatus === 'not_required' ? 'Not required' : selectedUser.user.approvalStatus],
+                  ['Registration date', selectedUser.user.createdAt ? formatDate(selectedUser.user.createdAt) : null],
+                  ['Last login', selectedUser.user.lastLoginAt ? formatDate(selectedUser.user.lastLoginAt) : null],
+                  ['Emergency count', Number.isInteger(selectedUser.emergencyCount) ? selectedUser.emergencyCount : null],
+                  ['Location', selectedUser.user.location ? JSON.stringify(selectedUser.user.location) : null],
+                ].map(([label, value]) => (
+                  <div key={label} className="min-w-0 border-b border-slate-100 pb-2">
+                    <p className="text-xs font-medium uppercase text-slate-500">{label}</p>
+                    <p className="mt-1 break-words text-slate-900">{value === '' || value === null || value === undefined ? 'N/A' : value}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      )}
     </div>
   );
 
@@ -533,7 +657,7 @@ export default function AdminPage() {
           <div className="rounded-full bg-slate-900 px-3 py-1 text-sm font-medium text-white">{user?.role || 'admin'}</div>
         </div>
 
-        {error && (
+        {error && section !== '/users' && (
           <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
         )}
 
@@ -552,7 +676,7 @@ export default function AdminPage() {
             </nav>
           </aside>
 
-          <main>{loading ? <LoadingState /> : content}</main>
+          <main>{section === '/users' ? content : loading ? <LoadingState /> : content}</main>
         </div>
       </div>
     </div>
