@@ -5,6 +5,13 @@ import MapView from '../components/MapView';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const createEmptyForm = () => ({
+  description: '',
+  latitude: '',
+  longitude: '',
+  contactInfo: '',
+  priority: 'Medium',
+});
 
 export default function EmergencySOSPage() {
   const { token } = useAuth();
@@ -12,13 +19,7 @@ export default function EmergencySOSPage() {
   const currentEmergencyId = useRef(null);
   const submissionResultRef = useRef(null);
 
-  const [form, setForm] = useState({
-    description: '',
-    latitude: '',
-    longitude: '',
-    contactInfo: '',
-    priority: 'Medium',
-  });
+  const [form, setForm] = useState(createEmptyForm);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [isLocating, setIsLocating] = useState(false);
@@ -119,6 +120,7 @@ export default function EmergencySOSPage() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Unable to load emergency response information.');
+      if (String(currentEmergencyId.current) !== String(emergencyId)) return;
       setVictimView(data);
       setSubmittedEmergency(data.emergency);
     } catch (loadError) {
@@ -225,6 +227,23 @@ export default function EmergencySOSPage() {
     }
   };
 
+  const handleBackToSos = () => {
+    currentEmergencyId.current = null;
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setForm(createEmptyForm());
+    setImageFile(null);
+    setImagePreview('');
+    setError('');
+    setSuccess('');
+    setSubmittedEmergency(null);
+    setVictimView(null);
+    setResultLoading(false);
+    setServicesLoading(false);
+    setResultError('');
+    setShowSubmissionResult(false);
+  };
+
   const resultEmergency = victimView?.emergency || submittedEmergency;
   const aiAssessment = victimView?.aiAssessment;
   const aiEvidence = resultEmergency?.aiEvidence || {};
@@ -260,6 +279,11 @@ export default function EmergencySOSPage() {
   const formatConfidence = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : 'N/A';
   const formatProbability = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(1)}%` : 'N/A';
   const formatDistance = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} km away` : 'N/A';
+  const formatSubmittedAt = (value) => {
+    if (!value) return 'Not available';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString();
+  };
   const displayedProbabilities = aiInProgress || aiFailed ? {} : probabilities;
   const aiEvidenceFor = victimView?.explanation || aiEvidence;
 
@@ -283,7 +307,7 @@ export default function EmergencySOSPage() {
   }[status] || 'N/A');
 
   const emergencyId = resultEmergency?.id || resultEmergency?._id || submittedEmergency?.id || submittedEmergency?._id;
-  const emergencyStatus = resultEmergency?.status || submittedEmergency?.status || 'Submitted';
+  const emergencyStatus = resultEmergency?.status || submittedEmergency?.status || 'Status unavailable';
   const aiAnalysisComplete = ['Completed', 'Verification Required', 'completed'].includes(aiStatus);
   const responderAssigned = Boolean(resultEmergency?.assignedVolunteer);
   const responseComplete = ['In Progress', 'Resolved'].includes(emergencyStatus);
@@ -452,7 +476,7 @@ export default function EmergencySOSPage() {
 
           <div className="mt-5 rounded-xl border border-slate-700 bg-slate-800 p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Status</p>
-            <p className="mt-2 text-lg font-semibold text-cyan-300">{submittedEmergency?.status || 'Submitted'}</p>
+            <p className="mt-2 text-lg font-semibold text-cyan-300">Not Submitted</p>
           </div>
 
           {imagePreview ? (
@@ -487,7 +511,7 @@ export default function EmergencySOSPage() {
         <div ref={submissionResultRef} className="mt-6 space-y-6">
           <button
             type="button"
-            onClick={() => setShowSubmissionResult(false)}
+            onClick={handleBackToSos}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-800 transition hover:bg-slate-50"
           >
             ← Back to SOS
@@ -530,6 +554,8 @@ export default function EmergencySOSPage() {
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase text-slate-500">Emergency ID</p>
                   <p className="mt-1 break-all font-mono text-sm font-semibold text-slate-900 sm:text-base">{emergencyId || 'N/A'}</p>
+                  <p className="mt-3 text-xs font-semibold uppercase text-slate-500">Submitted At</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{formatSubmittedAt(resultEmergency?.createdAt || submittedEmergency?.createdAt)}</p>
                 </div>
                 <div className="shrink-0 text-left sm:text-right">
                   <p className="text-xs font-semibold uppercase text-slate-500">Current status</p>
