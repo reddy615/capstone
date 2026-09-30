@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import Card from '../components/Card';
@@ -56,6 +57,10 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const facilities = emergency.recommendations?.facilities || [];
   const resources = emergency.recommendations?.resources || [];
 
+  const formatProbabilities = Object.entries(probabilities)
+    .map(([name, value]) => `${name} ${Math.round(value * 100)}%`)
+    .join(' | ');
+
   useEffect(() => setStatus(emergency.status || 'Submitted'), [emergency.status]);
 
   const updateStatus = async (event) => {
@@ -76,8 +81,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
   };
 
   return (
-    <Card title="Emergency details">
-      <div className="space-y-4 text-sm">
+    <div className="space-y-4 text-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Emergency ID</p>
@@ -95,6 +99,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
           <span>Current status: {emergency.status || 'Unavailable'}</span>
           <span>AI status: {emergency.aiStatus || 'Unavailable'}</span>
           <span>Assigned volunteer: {emergency.assignedVolunteer?.user?.name || emergency.assignedVolunteer?.name || 'Unassigned'}</span>
+          <span>Verification required: {requiresVerification(emergency) ? 'Yes' : emergency.verifiedPrediction ? 'Verified' : 'No'}</span>
           <span>Last updated: {formatDate(emergency.updatedAt || emergency.aiUpdatedAt)}</span>
         </div>
 
@@ -103,7 +108,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
           <div className="mt-2 grid gap-2 text-slate-600 md:grid-cols-2">
             <span>Prediction: {emergency.aiPrediction || 'Verification Required / unresolved'}</span>
             <span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span>
-            <span>Probabilities: {Object.entries(probabilities).map(([name, value]) => `${name} ${Math.round(value * 100)}%`).join(' | ') || 'Unavailable'}</span>
+            <span>Probabilities: {formatProbabilities || 'Unavailable'}</span>
             <span>Modality: {emergency.aiModalityContribution ? JSON.stringify(emergency.aiModalityContribution) : 'Unavailable'}</span>
           </div>
           {emergency.aiExplanation && <p className="mt-2 text-slate-700">{emergency.aiExplanation}</p>}
@@ -133,8 +138,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
           </label>
         )}
         {statusError && <p className="text-sm text-rose-700">{statusError}</p>}
-      </div>
-    </Card>
+    </div>
   );
 }
 
@@ -144,8 +148,14 @@ export default function DashboardPage() {
   const [emergencies, setEmergencies] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, critical: 0, high: 0, verification: 0, assigned: 0, inProgress: 0, resolved: 0 });
   const [selectedEmergency, setSelectedEmergency] = useState(null);
+  const [selectedEmergencyId, setSelectedEmergencyId] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [error, setError] = useState('');
+  const selectedEmergencyIdRef = useRef(null);
+  const modalCloseButtonRef = useRef(null);
+  const modalTriggerRef = useRef(null);
   const apiBase = import.meta.env.VITE_API_URL || '/api';
   const isResponder = responderRoles.has(user?.role);
   const isEmergencyView = location.pathname === '/emergencies';
@@ -191,19 +201,45 @@ export default function DashboardPage() {
     }
   };
 
-  const selectEmergency = async (emergency) => {
-    setSelectedEmergency(emergency);
-    const emergencyId = emergency._id || emergency.id;
+  const loadEmergencyDetails = async (emergencyId) => {
+    setDetailLoading(true);
+    setDetailError('');
     try {
-      const response = await fetch(`${apiBase}/emergencies/${emergencyId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch(`${apiBase}/emergencies/${encodeURIComponent(emergencyId)}`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await response.json();
+      if (!response.ok || !data.emergency) throw new Error('Unable to load emergency details.');
+      if (String(selectedEmergencyIdRef.current) !== String(emergencyId)) return;
       if (response.ok && data.emergency) {
         upsertEmergency(data.emergency);
         setSelectedEmergency(data.emergency);
       }
     } catch {
-      // The summary remains visible when the detail request is unavailable.
+      if (String(selectedEmergencyIdRef.current) === String(emergencyId)) {
+        setDetailError('Unable to load emergency details.');
+      }
+    } finally {
+      if (String(selectedEmergencyIdRef.current) === String(emergencyId)) setDetailLoading(false);
     }
+  };
+
+  const selectEmergency = (emergency, triggerElement = document.activeElement) => {
+    const emergencyId = emergency._id || emergency.id || emergency.emergencyId;
+    if (!emergencyId) return;
+    modalTriggerRef.current = triggerElement;
+    selectedEmergencyIdRef.current = String(emergencyId);
+    setSelectedEmergencyId(String(emergencyId));
+    setSelectedEmergency(null);
+    loadEmergencyDetails(emergencyId);
+  };
+
+  const closeEmergencyDetails = () => {
+    selectedEmergencyIdRef.current = null;
+    setSelectedEmergencyId(null);
+    setSelectedEmergency(null);
+    setDetailLoading(false);
+    setDetailError('');
+    const trigger = modalTriggerRef.current;
+    if (trigger?.isConnected) window.requestAnimationFrame(() => trigger.focus());
   };
 
   useEffect(() => {
@@ -232,7 +268,29 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelectedEmergency(null);
+    selectedEmergencyIdRef.current = null;
+    setSelectedEmergencyId(null);
+    setDetailLoading(false);
+    setDetailError('');
   }, [location.pathname, selectedFilter]);
+
+  useEffect(() => {
+    if (!selectedEmergencyId) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousRootOverflow = document.documentElement.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') closeEmergencyDetails();
+    };
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    modalCloseButtonRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousRootOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [selectedEmergencyId]);
 
   const markers = useMemo(() => emergencies.filter((emergency) => typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number').map((emergency) => ({
     id: emergencyKey(emergency),
@@ -299,7 +357,7 @@ export default function DashboardPage() {
         <Card title={`${isEmergencyView && isResponder ? selectedFilterOption?.title || 'Filtered Emergencies' : 'Emergencies'} (${emergencies.length})`}>
           {!emergencies.length && <p className="text-sm text-slate-500">{isEmergencyView && isResponder ? 'No emergencies found for this filter.' : 'No stored emergencies available.'}</p>}
           <div className="space-y-3">
-            {emergencies.map((emergency) => <button type="button" key={emergencyKey(emergency)} onClick={() => selectEmergency(emergency)} className="w-full rounded-lg border border-slate-200 p-4 text-left transition hover:border-cyan-400">
+            {emergencies.map((emergency) => <button type="button" key={emergencyKey(emergency)} aria-haspopup="dialog" aria-label={`Open emergency ${emergencyKey(emergency)}: ${emergency.description || emergency.type || 'Emergency details'}`} onClick={(event) => selectEmergency(emergency, event.currentTarget)} className="w-full cursor-pointer rounded-lg border border-slate-200 p-4 text-left transition hover:border-cyan-400 hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{emergency.type || emergency.aiPrediction || (requiresVerification(emergency) ? 'Verification Required' : 'Unresolved')}</p><p className="mt-1 text-xs text-slate-500">Emergency ID: {emergency._id || emergency.id}</p></div><div className="flex gap-2"><StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} /><StatusBadge text={emergency.status || emergency.aiStatus || 'Submitted'} tone={toneFor(emergency.status || emergency.aiStatus)} /></div></div>
               <p className="mt-3 text-sm text-slate-700">{emergency.description || 'No text description provided.'}</p>
               <div className="mt-3 grid gap-1 text-sm text-slate-600 md:grid-cols-2"><span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span><span>Volunteer: {emergency.assignedVolunteer?.user?.name || emergency.assignedVolunteer?.name || 'Unassigned'}</span><span>Location: {typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span><span>Created: {formatDate(emergency.createdAt)}</span><span>Verification required: {requiresVerification(emergency) ? 'Yes' : emergency.verifiedPrediction ? 'Verified' : 'No'}</span></div>
@@ -309,7 +367,44 @@ export default function DashboardPage() {
         <Card title="Live emergency map"><MapView markers={markers} onMarkerSelect={selectEmergency} /><p className="mt-2 text-xs text-slate-500">{markers.length} emergency marker(s) with stored coordinates. Location unavailable records are excluded.</p></Card>
       </div>
 
-      {selectedEmergency && <EmergencyDetails emergency={selectedEmergency} role={user?.role} token={token} onUpdated={upsertEmergency} />}
+      {selectedEmergencyId && createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEmergencyDetails(); }}>
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="emergency-details-title"
+          className="max-h-[88vh] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-xl bg-white shadow-2xl"
+          onKeyDown={(event) => {
+            if (event.key !== 'Tab') return;
+            const focusable = [...event.currentTarget.querySelectorAll('button:not([disabled]), select:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+            if (!focusable.length) return;
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }}
+        >
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
+            <h2 id="emergency-details-title" className="text-xl font-semibold text-slate-900">Emergency Details</h2>
+            <button ref={modalCloseButtonRef} type="button" onClick={closeEmergencyDetails} aria-label="Close emergency details" title="Close" className="flex h-9 w-9 items-center justify-center rounded-md text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600">×</button>
+          </div>
+          <div className="p-5 sm:p-7">
+            {detailLoading && <p role="status" className="py-8 text-center text-sm text-slate-600">Loading emergency details...</p>}
+            {!detailLoading && detailError && <div role="alert" className="space-y-3 py-6 text-center">
+              <p className="text-sm text-rose-700">Unable to load emergency details.</p>
+              <button type="button" onClick={() => loadEmergencyDetails(selectedEmergencyId)} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600">Retry</button>
+            </div>}
+            {!detailLoading && !detailError && selectedEmergency && <EmergencyDetails emergency={selectedEmergency} role={user?.role} token={token} onUpdated={upsertEmergency} />}
+          </div>
+          <div className="sticky bottom-0 flex justify-end border-t border-slate-200 bg-white px-5 py-3 sm:px-7">
+            <button type="button" onClick={closeEmergencyDetails} className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 focus-visible:outline-offset-2">Close</button>
+          </div>
+        </section>
+      </div>, document.body)}
     </div>
   );
 }
