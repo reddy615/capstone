@@ -66,7 +66,7 @@ function AppRoutes() {
           path="/emergencies"
           element={
             <ProtectedRoute>
-              <DashboardRoute />
+              <DashboardPage />
             </ProtectedRoute>
           }
         />

@@ -166,6 +166,17 @@ const requiredEmergencyActionsFor = (emergency) => {
 const responderRoles = ['volunteer', 'ngo', 'hospital', 'authority', 'admin'];
 const coordinationRoles = ['ngo', 'authority', 'admin'];
 const statusValues = ['Submitted', 'Processing', 'Detected', 'Verification Required', 'Assigned', 'In Progress', 'Resolved', 'Cancelled', 'Failed'];
+const activeEmergencyFilter = { status: { $nin: ['Resolved', 'Cancelled'] } };
+const emergencyFilters = {
+  all: () => ({}),
+  active: () => ({ ...activeEmergencyFilter }),
+  critical: () => ({ priority: 'Critical', ...activeEmergencyFilter }),
+  high: () => ({ priority: 'High', ...activeEmergencyFilter }),
+  'pending-verification': () => ({ aiStatus: 'Verification Required' }),
+  assigned: () => ({ assignedVolunteer: { $ne: null } }),
+  'in-progress': () => ({ status: 'In Progress' }),
+  resolved: () => ({ status: 'Resolved' }),
+};
 
 const publicEmergency = (emergency) => ({
   id: emergency._id,
@@ -194,7 +205,7 @@ const emitStatus = (req, emergency) => {
 
 router.get('/active', protect, authorize(...responderRoles), async (req, res, next) => {
   try {
-    const filter = { status: { $nin: ['Resolved', 'Cancelled'] } };
+    const filter = { ...activeEmergencyFilter };
     if (req.user.role === 'volunteer') {
       const volunteer = await Volunteer.findOne({ user: req.user._id });
       filter.assignedVolunteer = volunteer?._id || null;
@@ -215,7 +226,7 @@ router.get('/stats', protect, authorize(...responderRoles), async (req, res, nex
       Emergency.countDocuments({ priority: 'Critical', status: { $nin: ['Resolved', 'Cancelled'] } }),
       Emergency.countDocuments({ priority: 'High', status: { $nin: ['Resolved', 'Cancelled'] } }),
       Emergency.countDocuments({ aiStatus: 'Verification Required' }),
-      Emergency.countDocuments({ status: 'Assigned' }),
+      Emergency.countDocuments({ assignedVolunteer: { $ne: null } }),
       Emergency.countDocuments({ status: 'In Progress' }),
       Emergency.countDocuments({ status: 'Resolved' }),
     ]);
@@ -542,7 +553,15 @@ router.get('/my', protect, async (req, res, next) => {
 
 router.get('/', protect, authorize('volunteer', 'ngo', 'hospital', 'authority', 'admin'), async (req, res, next) => {
   try {
-    const emergencies = await Emergency.find().sort({ createdAt: -1 }).populate('userId', 'name email role');
+    const filterName = req.query.filter ?? 'all';
+    if (typeof filterName !== 'string' || !Object.prototype.hasOwnProperty.call(emergencyFilters, filterName)) {
+      return next(new AppError('Invalid emergency filter.', 400));
+    }
+
+    const emergencies = await Emergency.find(emergencyFilters[filterName]())
+      .sort({ createdAt: -1 })
+      .populate('assignedVolunteer')
+      .populate('userId', 'name email role');
 
     res.status(200).json({
       success: true,

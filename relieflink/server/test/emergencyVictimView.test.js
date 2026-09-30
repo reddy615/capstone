@@ -15,6 +15,7 @@ const { haversineKm } = emergencyRoutes;
 const originalMethods = {
   userFindById: User.findById,
   emergencyFindById: Emergency.findById,
+  emergencyFind: Emergency.find,
   hospitalFind: Hospital.find,
   shelterFind: Shelter.find,
   resourceFind: Resource.find,
@@ -25,6 +26,7 @@ const users = new Map();
 const emergencies = new Map();
 let server;
 let baseUrl;
+let lastEmergencyFilter;
 
 const makeListQuery = (records) => ({
   select() { return this; },
@@ -69,6 +71,14 @@ before(async () => {
 
   User.findById = (id) => ({ select: async () => users.get(String(id)) || null });
   Emergency.findById = (id) => ({ populate: async () => emergencies.get(String(id)) || null });
+  Emergency.find = (filter) => {
+    lastEmergencyFilter = filter;
+    return {
+      sort() { return this; },
+      populate() { return this; },
+      then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
+    };
+  };
   Hospital.find = () => makeListQuery([
     { _id: 'hospital-far', name: 'Far Hospital', type: 'general', availableBeds: 4, capacity: 40, contact: 'stored hospital contact', location: { coordinates: [72.9777, 19.076] } },
     { _id: 'hospital-near', name: 'Near Hospital', type: 'trauma', availableBeds: 2, capacity: 20, contact: '', location: { coordinates: [72.8877, 19.076] } },
@@ -98,6 +108,7 @@ after(async () => {
   }
   User.findById = originalMethods.userFindById;
   Emergency.findById = originalMethods.emergencyFindById;
+  Emergency.find = originalMethods.emergencyFind;
   Hospital.find = originalMethods.hospitalFind;
   Shelter.find = originalMethods.shelterFind;
   Resource.find = originalMethods.resourceFind;
@@ -108,6 +119,40 @@ after(async () => {
 const tokenFor = (id, claimedRole) => jwt.sign({ id, role: claimedRole }, jwtSecret);
 const getVictimView = (id, token) => fetch(`${baseUrl}/api/emergencies/${id}/victim-view`, {
   headers: { Authorization: `Bearer ${token}` },
+});
+
+test('emergency list validates and applies supported responder filters', async () => {
+  const filterCases = [
+    ['all', {}],
+    ['active', { status: { $nin: ['Resolved', 'Cancelled'] } }],
+    ['critical', { priority: 'Critical', status: { $nin: ['Resolved', 'Cancelled'] } }],
+    ['high', { priority: 'High', status: { $nin: ['Resolved', 'Cancelled'] } }],
+    ['pending-verification', { aiStatus: 'Verification Required' }],
+    ['assigned', { assignedVolunteer: { $ne: null } }],
+    ['in-progress', { status: 'In Progress' }],
+    ['resolved', { status: 'Resolved' }],
+  ];
+
+  for (const [filter, expectedQuery] of filterCases) {
+    const response = await fetch(`${baseUrl}/api/emergencies?filter=${filter}`, {
+      headers: { Authorization: `Bearer ${tokenFor('admin-a', 'admin')}` },
+    });
+    const data = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(data.emergencies, []);
+    assert.deepEqual(lastEmergencyFilter, expectedQuery);
+  }
+
+  const invalidResponse = await fetch(`${baseUrl}/api/emergencies?filter=unknown`, {
+    headers: { Authorization: `Bearer ${tokenFor('admin-a', 'admin')}` },
+  });
+  assert.equal(invalidResponse.status, 400);
+
+  const unauthorizedResponse = await fetch(`${baseUrl}/api/emergencies?filter=critical`, {
+    headers: { Authorization: `Bearer ${tokenFor('victim-a', 'victim')}` },
+  });
+  assert.equal(unauthorizedResponse.status, 403);
 });
 
 test('victim-view returns real emergency, AI, actions, and nearest services without secrets', async () => {

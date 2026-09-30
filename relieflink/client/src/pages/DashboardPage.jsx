@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import Card from '../components/Card';
@@ -28,6 +29,20 @@ const toneFor = (value) => {
 const emergencyKey = (emergency) => String(emergency._id || emergency.id || emergency.emergencyId);
 
 const formatDate = (value) => value ? new Date(value).toLocaleString() : 'Unavailable';
+const emergencyFilterOptions = [
+  { value: 'all', label: 'All', title: 'All Emergencies' },
+  { value: 'active', label: 'Active', title: 'Active Emergencies' },
+  { value: 'critical', label: 'Critical', title: 'Critical Emergencies' },
+  { value: 'high', label: 'High Priority', title: 'High Priority Emergencies' },
+  { value: 'pending-verification', label: 'Pending Verification', title: 'Pending Verification' },
+  { value: 'assigned', label: 'Assigned', title: 'Assigned Emergencies' },
+  { value: 'in-progress', label: 'In Progress', title: 'In Progress Emergencies' },
+  { value: 'resolved', label: 'Resolved', title: 'Resolved Emergencies' },
+];
+
+const requiresVerification = (emergency) => emergency.verificationRequired === true
+  || emergency.aiStatus === 'Verification Required'
+  || emergency.status === 'Verification Required';
 
 function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const [status, setStatus] = useState(emergency.status || 'Submitted');
@@ -125,6 +140,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
 
 export default function DashboardPage() {
   const { user, token } = useAuth();
+  const location = useLocation();
   const [emergencies, setEmergencies] = useState([]);
   const [stats, setStats] = useState({ active: 0, critical: 0, high: 0, verification: 0, assigned: 0, inProgress: 0, resolved: 0 });
   const [selectedEmergency, setSelectedEmergency] = useState(null);
@@ -132,6 +148,9 @@ export default function DashboardPage() {
   const [error, setError] = useState('');
   const apiBase = import.meta.env.VITE_API_URL || '/api';
   const isResponder = responderRoles.has(user?.role);
+  const isEmergencyView = location.pathname === '/emergencies';
+  const selectedFilter = new URLSearchParams(location.search).get('filter') || 'all';
+  const selectedFilterOption = emergencyFilterOptions.find((option) => option.value === selectedFilter);
 
   const upsertEmergency = (incoming) => {
     if (!incoming) return;
@@ -146,15 +165,24 @@ export default function DashboardPage() {
 
   const loadDashboard = async () => {
     try {
-      const endpoint = isResponder ? '/emergencies/active' : '/emergencies/my';
+      setError('');
+      const endpoint = isResponder
+        ? isEmergencyView ? `/emergencies?filter=${encodeURIComponent(selectedFilter)}` : '/emergencies/active'
+        : '/emergencies/my';
+      const shouldLoadStats = isResponder && !isEmergencyView;
       const responses = await Promise.all([
         fetch(`${apiBase}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } }),
-        ...(isResponder ? [fetch(`${apiBase}/emergencies/stats`, { headers: { Authorization: `Bearer ${token}` } })] : []),
+        ...(shouldLoadStats ? [fetch(`${apiBase}/emergencies/stats`, { headers: { Authorization: `Bearer ${token}` } })] : []),
       ]);
       const emergencyData = await responses[0].json();
-      if (!responses[0].ok) throw new Error(emergencyData.message || 'Unable to load emergencies.');
-      setEmergencies(emergencyData.emergencies || []);
-      if (isResponder) {
+      if (!responses[0].ok) {
+        if (isEmergencyView && isResponder) setEmergencies([]);
+        throw new Error(emergencyData.message || 'Unable to load emergencies.');
+      }
+      const loadedEmergencies = emergencyData.emergencies || [];
+      setEmergencies(loadedEmergencies);
+      setSelectedEmergency((current) => current && loadedEmergencies.some((emergency) => emergencyKey(emergency) === emergencyKey(current)) ? current : null);
+      if (shouldLoadStats) {
         const statsData = await responses[1].json();
         if (responses[1].ok) setStats(statsData.stats);
       }
@@ -200,7 +228,11 @@ export default function DashboardPage() {
       handlers.forEach(([eventName, handler]) => socket.off(eventName, handler));
       socket.disconnect();
     };
-  }, [token, isResponder]);
+  }, [token, isResponder, location.pathname, selectedFilter]);
+
+  useEffect(() => {
+    setSelectedEmergency(null);
+  }, [location.pathname, selectedFilter]);
 
   const markers = useMemo(() => emergencies.filter((emergency) => typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number').map((emergency) => ({
     id: emergencyKey(emergency),
@@ -214,7 +246,13 @@ export default function DashboardPage() {
   })), [emergencies]);
 
   const summaryStats = isResponder ? [
-    ['Active Emergencies', stats.active], ['Critical', stats.critical], ['High Priority', stats.high], ['Pending Verification', stats.verification], ['Assigned', stats.assigned], ['In Progress', stats.inProgress], ['Resolved', stats.resolved],
+    { label: 'Active Emergencies', value: stats.active, filter: 'active' },
+    { label: 'Critical', value: stats.critical, filter: 'critical' },
+    { label: 'High Priority', value: stats.high, filter: 'high' },
+    { label: 'Pending Verification', value: stats.verification, filter: 'pending-verification' },
+    { label: 'Assigned', value: stats.assigned, filter: 'assigned' },
+    { label: 'In Progress', value: stats.inProgress, filter: 'in-progress' },
+    { label: 'Resolved', value: stats.resolved, filter: 'resolved' },
   ] : [];
 
   return (
@@ -222,25 +260,46 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-cyan-700">ReliefLink operations</p>
-          <h1 className="mt-1 text-3xl font-bold text-slate-900">{isResponder ? 'Live emergency coordination' : 'Your emergency response'}</h1>
-          <p className="mt-2 text-slate-600">{isResponder ? 'Operational data from registered emergencies and response records.' : 'Monitor your submitted emergency and response updates.'}</p>
+          <h1 className="mt-1 text-3xl font-bold text-slate-900">{isEmergencyView ? 'Emergencies' : isResponder ? 'Live emergency coordination' : 'Your emergency response'}</h1>
+          <p className="mt-2 text-slate-600">{isEmergencyView && isResponder ? `Filter: ${selectedFilterOption?.label || selectedFilter}` : isResponder ? 'Operational data from registered emergencies and response records.' : 'Monitor your submitted emergency and response updates.'}</p>
         </div>
         <StatusBadge text={user?.role || 'victim'} tone="blue" />
       </div>
 
       {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
-      {isResponder && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">{summaryStats.map(([label, value]) => <Card key={label}><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold text-slate-900">{value}</p></Card>)}</div>}
+      {isResponder && !isEmergencyView && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">{summaryStats.map(({ label, value, filter }) => (
+        <Link key={filter} to={`/emergencies?filter=${filter}`} aria-label={`View ${label} emergencies`} className="group block rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 focus-visible:outline-offset-2">
+          <Card className="h-full transition duration-150 group-hover:-translate-y-0.5 group-hover:border-cyan-300 group-hover:shadow-md">
+            <p className="text-sm text-slate-500">{label}</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{value}</p>
+          </Card>
+        </Link>
+      ))}</div>}
 
       {notifications.length > 0 && <Card title="Live notifications"><div className="space-y-2 text-sm text-slate-700">{notifications.map((notification) => <p key={notification.id} className="border-b border-slate-100 pb-2 last:border-0">{notification.text}</p>)}</div></Card>}
 
+      {isResponder && isEmergencyView && <nav aria-label="Emergency filters" className="flex flex-wrap gap-2">
+        {emergencyFilterOptions.map((option) => (
+          <Link
+            key={option.value}
+            to={`/emergencies?filter=${option.value}`}
+            aria-current={selectedFilter === option.value ? 'page' : undefined}
+            className={`rounded-md border px-3 py-2 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 ${selectedFilter === option.value ? 'border-cyan-600 bg-cyan-50 text-cyan-900' : 'border-slate-300 bg-white text-slate-700 hover:border-cyan-400 hover:bg-cyan-50'}`}
+          >
+            {option.label}
+          </Link>
+        ))}
+      </nav>}
+
       <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card title={`Emergencies (${emergencies.length})`}>
-          {!emergencies.length && <p className="text-sm text-slate-500">No stored emergencies available.</p>}
+        <Card title={`${isEmergencyView && isResponder ? selectedFilterOption?.title || 'Filtered Emergencies' : 'Emergencies'} (${emergencies.length})`}>
+          {!emergencies.length && <p className="text-sm text-slate-500">{isEmergencyView && isResponder ? 'No emergencies found for this filter.' : 'No stored emergencies available.'}</p>}
           <div className="space-y-3">
             {emergencies.map((emergency) => <button type="button" key={emergencyKey(emergency)} onClick={() => selectEmergency(emergency)} className="w-full rounded-lg border border-slate-200 p-4 text-left transition hover:border-cyan-400">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{emergency.type || emergency.aiPrediction || 'Verification Required'}</p><p className="mt-1 text-xs text-slate-500">{emergency._id || emergency.id}</p></div><div className="flex gap-2"><StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} /><StatusBadge text={emergency.status || emergency.aiStatus || 'Submitted'} tone={toneFor(emergency.status || emergency.aiStatus)} /></div></div>
-              <div className="mt-3 grid gap-1 text-sm text-slate-600 md:grid-cols-2"><span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span><span>Volunteer: {emergency.assignedVolunteer?.user?.name || emergency.assignedVolunteer?.name || 'Unassigned'}</span><span>Location: {typeof emergency.latitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span><span>Created: {formatDate(emergency.createdAt)}</span></div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{emergency.type || emergency.aiPrediction || (requiresVerification(emergency) ? 'Verification Required' : 'Unresolved')}</p><p className="mt-1 text-xs text-slate-500">Emergency ID: {emergency._id || emergency.id}</p></div><div className="flex gap-2"><StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} /><StatusBadge text={emergency.status || emergency.aiStatus || 'Submitted'} tone={toneFor(emergency.status || emergency.aiStatus)} /></div></div>
+              <p className="mt-3 text-sm text-slate-700">{emergency.description || 'No text description provided.'}</p>
+              <div className="mt-3 grid gap-1 text-sm text-slate-600 md:grid-cols-2"><span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span><span>Volunteer: {emergency.assignedVolunteer?.user?.name || emergency.assignedVolunteer?.name || 'Unassigned'}</span><span>Location: {typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span><span>Created: {formatDate(emergency.createdAt)}</span><span>Verification required: {requiresVerification(emergency) ? 'Yes' : emergency.verifiedPrediction ? 'Verified' : 'No'}</span></div>
             </button>)}
           </div>
         </Card>
