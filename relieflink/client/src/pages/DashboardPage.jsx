@@ -303,6 +303,19 @@ export default function DashboardPage() {
     assignedVolunteer: emergency.assignedVolunteer,
   })), [emergencies]);
 
+  const detailMapMarkers = selectedEmergency && typeof selectedEmergency.latitude === 'number' && typeof selectedEmergency.longitude === 'number'
+    ? [{
+      id: emergencyKey(selectedEmergency),
+      emergency: selectedEmergency,
+      position: [selectedEmergency.latitude, selectedEmergency.longitude],
+      type: selectedEmergency.type || selectedEmergency.aiPrediction || 'Verification Required',
+      priority: selectedEmergency.priority,
+      confidence: selectedEmergency.aiConfidence,
+      status: selectedEmergency.status,
+      assignedVolunteer: selectedEmergency.assignedVolunteer,
+    }]
+    : [];
+
   const summaryStats = isResponder ? [
     { label: 'Active Emergencies', value: stats.active, filter: 'active' },
     { label: 'Critical', value: stats.critical, filter: 'critical' },
@@ -367,12 +380,12 @@ export default function DashboardPage() {
         <Card title="Live emergency map"><MapView markers={markers} onMarkerSelect={selectEmergency} /><p className="mt-2 text-xs text-slate-500">{markers.length} emergency marker(s) with stored coordinates. Location unavailable records are excluded.</p></Card>
       </div>
 
-      {selectedEmergencyId && createPortal(<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEmergencyDetails(); }}>
+      {selectedEmergencyId && createPortal(<div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/50 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEmergencyDetails(); }}>
         <section
           role="dialog"
           aria-modal="true"
           aria-labelledby="emergency-details-title"
-          className="max-h-[88vh] w-full max-w-4xl overflow-y-auto overscroll-contain rounded-xl bg-white shadow-2xl"
+          className="max-h-[88vh] w-full max-w-6xl overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl bg-white shadow-2xl"
           onKeyDown={(event) => {
             if (event.key !== 'Tab') return;
             const focusable = [...event.currentTarget.querySelectorAll('button:not([disabled]), select:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
@@ -398,7 +411,20 @@ export default function DashboardPage() {
               <p className="text-sm text-rose-700">Unable to load emergency details.</p>
               <button type="button" onClick={() => loadEmergencyDetails(selectedEmergencyId)} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600">Retry</button>
             </div>}
-            {!detailLoading && !detailError && selectedEmergency && <EmergencyDetails emergency={selectedEmergency} role={user?.role} token={token} onUpdated={upsertEmergency} />}
+            {!detailLoading && !detailError && selectedEmergency && <div className="grid min-w-0 gap-6 md:grid-cols-[minmax(0,1.4fr)_minmax(320px,1fr)]">
+              <div className="min-w-0"><EmergencyDetails emergency={selectedEmergency} role={user?.role} token={token} onUpdated={upsertEmergency} /></div>
+              <aside className="min-w-0 self-start rounded-lg border border-slate-200 p-3">
+                <h3 className="mb-3 font-semibold text-slate-900">Emergency Map</h3>
+                <MapView
+                  center={detailMapMarkers[0]?.position}
+                  zoom={detailMapMarkers.length ? 12 : 5}
+                  markers={detailMapMarkers}
+                  invalidateOnMount
+                  zoomAnimation={false}
+                  className="emergency-details-map"
+                />
+              </aside>
+            </div>}
           </div>
           <div className="sticky bottom-0 flex justify-end border-t border-slate-200 bg-white px-5 py-3 sm:px-7">
             <button type="button" onClick={closeEmergencyDetails} className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 focus-visible:outline-offset-2">Close</button>

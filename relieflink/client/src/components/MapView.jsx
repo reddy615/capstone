@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 
 const icon = L.icon({
@@ -10,10 +11,22 @@ const icon = L.icon({
   shadowSize: [41, 41],
 });
 
-export default function MapView({ center = [20.5937, 78.9629], zoom = 5, markers = [], onMarkerSelect }) {
+function InvalidateMapSize() {
+  const map = useMap();
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => map.invalidateSize());
+    return () => window.cancelAnimationFrame(frame);
+  }, [map]);
+
+  return null;
+}
+
+export default function MapView({ center = [20.5937, 78.9629], zoom = 5, markers = [], onMarkerSelect, invalidateOnMount = false, zoomAnimation = true, className = '' }) {
   return (
-    <div className="map-container">
-      <MapContainer center={center} zoom={zoom} scrollWheelZoom className="h-full w-full">
+    <div className={`map-container ${className}`}>
+      <MapContainer center={center} zoom={zoom} scrollWheelZoom zoomAnimation={zoomAnimation} className="h-full w-full">
+        {invalidateOnMount && <InvalidateMapSize />}
         <TileLayer
           attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
