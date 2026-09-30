@@ -10,6 +10,7 @@ export default function EmergencySOSPage() {
   const { token } = useAuth();
   const fileInputRef = useRef(null);
   const currentEmergencyId = useRef(null);
+  const submissionResultRef = useRef(null);
 
   const [form, setForm] = useState({
     description: '',
@@ -24,11 +25,18 @@ export default function EmergencySOSPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showSubmissionResult, setShowSubmissionResult] = useState(false);
   const [submittedEmergency, setSubmittedEmergency] = useState(null);
   const [victimView, setVictimView] = useState(null);
   const [resultLoading, setResultLoading] = useState(false);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [resultError, setResultError] = useState('');
+
+  useEffect(() => {
+    if (showSubmissionResult) {
+      submissionResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [showSubmissionResult]);
 
   const locationLabel = useMemo(() => {
     if (form.latitude && form.longitude) {
@@ -208,6 +216,7 @@ export default function EmergencySOSPage() {
       setResultLoading(true);
       setServicesLoading(true);
       setSuccess('Emergency submitted. AI analysis in progress...');
+      setShowSubmissionResult(true);
       await refreshVictimView(emergencyId);
     } catch (submitError) {
       setError(submitError.message || 'Emergency submission failed.');
@@ -295,6 +304,7 @@ export default function EmergencySOSPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
+      <div style={{ display: showSubmissionResult ? 'none' : undefined }}>
       <div className="mb-8">
         <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-700">SOS Submission</p>
         <h1 className="mt-2 text-3xl font-bold text-slate-900">Report an emergency</h1>
@@ -471,9 +481,18 @@ export default function EmergencySOSPage() {
           </div>
         </aside>
       </div>
+      </div>
 
-      {submittedEmergency && (
-        <div className="mt-6 space-y-6">
+      {showSubmissionResult && submittedEmergency && (
+        <div ref={submissionResultRef} className="mt-6 space-y-6">
+          <button
+            type="button"
+            onClick={() => setShowSubmissionResult(false)}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-800 transition hover:bg-slate-50"
+          >
+            ← Back to SOS
+          </button>
+
           <section
             className="overflow-hidden rounded-2xl border-2 border-red-300 bg-white shadow-lg"
             aria-label="SOS submission confirmation"
@@ -590,7 +609,7 @@ export default function EmergencySOSPage() {
             </div>
 
             <div className="mt-5 border-t border-slate-200 pt-4">
-              <h3 className="font-semibold text-slate-900">Why this prediction?</h3>
+              <h3 className="font-semibold text-slate-900">XAI Explanation</h3>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
                 {resultEmergency?.aiExplanation
                   || (aiInProgress ? 'The explanation will appear when analysis completes.' : 'AI explanation is not available for this analysis.')}
