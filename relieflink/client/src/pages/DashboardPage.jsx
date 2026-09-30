@@ -30,14 +30,14 @@ const emergencyKey = (emergency) => String(emergency._id || emergency.id || emer
 
 const formatDate = (value) => value ? new Date(value).toLocaleString() : 'Unavailable';
 const emergencyFilterOptions = [
-  { value: 'all', label: 'All', title: 'All Emergencies' },
-  { value: 'active', label: 'Active', title: 'Active Emergencies' },
-  { value: 'critical', label: 'Critical', title: 'Critical Emergencies' },
-  { value: 'high', label: 'High Priority', title: 'High Priority Emergencies' },
-  { value: 'pending-verification', label: 'Pending Verification', title: 'Pending Verification' },
-  { value: 'assigned', label: 'Assigned', title: 'Assigned Emergencies' },
-  { value: 'in-progress', label: 'In Progress', title: 'In Progress Emergencies' },
-  { value: 'resolved', label: 'Resolved', title: 'Resolved Emergencies' },
+  { value: 'all', label: 'All', title: 'All Emergencies', countKey: 'total' },
+  { value: 'active', label: 'Active', title: 'Active Emergencies', countKey: 'active' },
+  { value: 'critical', label: 'Critical', title: 'Critical Emergencies', countKey: 'critical' },
+  { value: 'high', label: 'High Priority', title: 'High Priority Emergencies', countKey: 'high' },
+  { value: 'pending-verification', label: 'Pending Verification', title: 'Pending Verification', countKey: 'verification' },
+  { value: 'assigned', label: 'Assigned', title: 'Assigned Emergencies', countKey: 'assigned' },
+  { value: 'in-progress', label: 'In Progress', title: 'In Progress Emergencies', countKey: 'inProgress' },
+  { value: 'resolved', label: 'Resolved', title: 'Resolved Emergencies', countKey: 'resolved' },
 ];
 
 const requiresVerification = (emergency) => emergency.verificationRequired === true
@@ -142,7 +142,7 @@ export default function DashboardPage() {
   const { user, token } = useAuth();
   const location = useLocation();
   const [emergencies, setEmergencies] = useState([]);
-  const [stats, setStats] = useState({ active: 0, critical: 0, high: 0, verification: 0, assigned: 0, inProgress: 0, resolved: 0 });
+  const [stats, setStats] = useState({ total: 0, active: 0, critical: 0, high: 0, verification: 0, assigned: 0, inProgress: 0, resolved: 0 });
   const [selectedEmergency, setSelectedEmergency] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [error, setError] = useState('');
@@ -169,7 +169,7 @@ export default function DashboardPage() {
       const endpoint = isResponder
         ? isEmergencyView ? `/emergencies?filter=${encodeURIComponent(selectedFilter)}` : '/emergencies/active'
         : '/emergencies/my';
-      const shouldLoadStats = isResponder && !isEmergencyView;
+      const shouldLoadStats = isResponder;
       const responses = await Promise.all([
         fetch(`${apiBase}${endpoint}`, { headers: { Authorization: `Bearer ${token}` } }),
         ...(shouldLoadStats ? [fetch(`${apiBase}/emergencies/stats`, { headers: { Authorization: `Bearer ${token}` } })] : []),
@@ -287,7 +287,10 @@ export default function DashboardPage() {
             aria-current={selectedFilter === option.value ? 'page' : undefined}
             className={`rounded-md border px-3 py-2 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600 ${selectedFilter === option.value ? 'border-cyan-600 bg-cyan-50 text-cyan-900' : 'border-slate-300 bg-white text-slate-700 hover:border-cyan-400 hover:bg-cyan-50'}`}
           >
-            {option.label}
+            {option.label}{' '}
+            <span className={`rounded-full px-1.5 py-0.5 text-xs tabular-nums ${selectedFilter === option.value ? 'bg-white text-cyan-800' : 'bg-slate-100 text-slate-600'}`}>
+              ({stats[option.countKey] ?? 0})
+            </span>
           </Link>
         ))}
       </nav>}

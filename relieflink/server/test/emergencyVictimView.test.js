@@ -5,6 +5,7 @@ const { after, before, test } = require('node:test');
 
 const User = require('../src/models/User');
 const Emergency = require('../src/models/Emergency');
+const Volunteer = require('../src/models/Volunteer');
 const Hospital = require('../src/models/Hospital');
 const Shelter = require('../src/models/Shelter');
 const Resource = require('../src/models/Resource');
@@ -16,6 +17,8 @@ const originalMethods = {
   userFindById: User.findById,
   emergencyFindById: Emergency.findById,
   emergencyFind: Emergency.find,
+  emergencyCountDocuments: Emergency.countDocuments,
+  volunteerFindOne: Volunteer.findOne,
   hospitalFind: Hospital.find,
   shelterFind: Shelter.find,
   resourceFind: Resource.find,
@@ -27,6 +30,7 @@ const emergencies = new Map();
 let server;
 let baseUrl;
 let lastEmergencyFilter;
+let countFilters = [];
 
 const makeListQuery = (records) => ({
   select() { return this; },
@@ -67,6 +71,7 @@ before(async () => {
   users.set('victim-a', { _id: 'victim-a', role: 'victim' });
   users.set('victim-b', { _id: 'victim-b', role: 'victim' });
   users.set('admin-a', { _id: 'admin-a', role: 'admin' });
+  users.set('volunteer-a', { _id: 'volunteer-a', role: 'volunteer', approvalStatus: 'approved' });
   emergencies.set('emergency-owner-a', makeEmergency());
 
   User.findById = (id) => ({ select: async () => users.get(String(id)) || null });
@@ -79,6 +84,11 @@ before(async () => {
       then(resolve, reject) { return Promise.resolve([]).then(resolve, reject); },
     };
   };
+  Emergency.countDocuments = async (filter) => {
+    countFilters.push(filter);
+    return countFilters.length;
+  };
+  Volunteer.findOne = () => ({ select: async () => ({ _id: 'volunteer-record-a' }) });
   Hospital.find = () => makeListQuery([
     { _id: 'hospital-far', name: 'Far Hospital', type: 'general', availableBeds: 4, capacity: 40, contact: 'stored hospital contact', location: { coordinates: [72.9777, 19.076] } },
     { _id: 'hospital-near', name: 'Near Hospital', type: 'trauma', availableBeds: 2, capacity: 20, contact: '', location: { coordinates: [72.8877, 19.076] } },
@@ -109,6 +119,8 @@ after(async () => {
   User.findById = originalMethods.userFindById;
   Emergency.findById = originalMethods.emergencyFindById;
   Emergency.find = originalMethods.emergencyFind;
+  Emergency.countDocuments = originalMethods.emergencyCountDocuments;
+  Volunteer.findOne = originalMethods.volunteerFindOne;
   Hospital.find = originalMethods.hospitalFind;
   Shelter.find = originalMethods.shelterFind;
   Resource.find = originalMethods.resourceFind;
@@ -127,7 +139,7 @@ test('emergency list validates and applies supported responder filters', async (
     ['active', { status: { $nin: ['Resolved', 'Cancelled'] } }],
     ['critical', { priority: 'Critical', status: { $nin: ['Resolved', 'Cancelled'] } }],
     ['high', { priority: 'High', status: { $nin: ['Resolved', 'Cancelled'] } }],
-    ['pending-verification', { aiStatus: 'Verification Required' }],
+    ['pending-verification', { $or: [{ aiStatus: 'Verification Required' }, { status: 'Verification Required' }] }],
     ['assigned', { assignedVolunteer: { $ne: null } }],
     ['in-progress', { status: 'In Progress' }],
     ['resolved', { status: 'Resolved' }],
@@ -153,6 +165,45 @@ test('emergency list validates and applies supported responder filters', async (
     headers: { Authorization: `Bearer ${tokenFor('victim-a', 'victim')}` },
   });
   assert.equal(unauthorizedResponse.status, 403);
+});
+
+test('emergency filter counts reuse result predicates and volunteer visibility', async () => {
+  countFilters = [];
+  const adminResponse = await fetch(`${baseUrl}/api/emergencies/stats`, {
+    headers: { Authorization: `Bearer ${tokenFor('admin-a', 'admin')}` },
+  });
+  const adminData = await adminResponse.json();
+  assert.equal(adminResponse.status, 200);
+  assert.deepEqual(adminData.stats, {
+    total: 1,
+    active: 2,
+    critical: 3,
+    high: 4,
+    verification: 5,
+    assigned: 6,
+    inProgress: 7,
+    resolved: 8,
+  });
+  assert.deepEqual(countFilters, [
+    {},
+    { status: { $nin: ['Resolved', 'Cancelled'] } },
+    { priority: 'Critical', status: { $nin: ['Resolved', 'Cancelled'] } },
+    { priority: 'High', status: { $nin: ['Resolved', 'Cancelled'] } },
+    { $or: [{ aiStatus: 'Verification Required' }, { status: 'Verification Required' }] },
+    { assignedVolunteer: { $ne: null } },
+    { status: 'In Progress' },
+    { status: 'Resolved' },
+  ]);
+
+  countFilters = [];
+  const volunteerResponse = await fetch(`${baseUrl}/api/emergencies/stats`, {
+    headers: { Authorization: `Bearer ${tokenFor('volunteer-a', 'volunteer')}` },
+  });
+  assert.equal(volunteerResponse.status, 200);
+  assert.ok(countFilters.every((filter) => {
+    const scope = filter.$and?.[1] || filter;
+    return scope.assignedVolunteer === 'volunteer-record-a';
+  }));
 });
 
 test('victim-view returns real emergency, AI, actions, and nearest services without secrets', async () => {

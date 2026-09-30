@@ -172,10 +172,18 @@ const emergencyFilters = {
   active: () => ({ ...activeEmergencyFilter }),
   critical: () => ({ priority: 'Critical', ...activeEmergencyFilter }),
   high: () => ({ priority: 'High', ...activeEmergencyFilter }),
-  'pending-verification': () => ({ aiStatus: 'Verification Required' }),
+  'pending-verification': () => ({ $or: [{ aiStatus: 'Verification Required' }, { status: 'Verification Required' }] }),
   assigned: () => ({ assignedVolunteer: { $ne: null } }),
   'in-progress': () => ({ status: 'In Progress' }),
   resolved: () => ({ status: 'Resolved' }),
+};
+
+const filterForEmergencyViewer = async (filter, user) => {
+  if (user.role !== 'volunteer') return filter;
+
+  const volunteer = await Volunteer.findOne({ user: user._id }).select('_id');
+  const assignmentScope = volunteer ? { assignedVolunteer: volunteer._id } : { _id: null };
+  return Object.keys(filter).length ? { $and: [filter, assignmentScope] } : assignmentScope;
 };
 
 const publicEmergency = (emergency) => ({
@@ -205,11 +213,7 @@ const emitStatus = (req, emergency) => {
 
 router.get('/active', protect, authorize(...responderRoles), async (req, res, next) => {
   try {
-    const filter = { ...activeEmergencyFilter };
-    if (req.user.role === 'volunteer') {
-      const volunteer = await Volunteer.findOne({ user: req.user._id });
-      filter.assignedVolunteer = volunteer?._id || null;
-    }
+    const filter = await filterForEmergencyViewer({ ...activeEmergencyFilter }, req.user);
     const emergencies = await Emergency.find(filter)
       .sort({ priority: -1, createdAt: -1 })
       .populate('assignedVolunteer');
@@ -221,16 +225,27 @@ router.get('/active', protect, authorize(...responderRoles), async (req, res, ne
 
 router.get('/stats', protect, authorize(...responderRoles), async (req, res, next) => {
   try {
-    const [active, critical, high, verification, assigned, inProgress, resolved] = await Promise.all([
-      Emergency.countDocuments({ status: { $nin: ['Resolved', 'Cancelled'] } }),
-      Emergency.countDocuments({ priority: 'Critical', status: { $nin: ['Resolved', 'Cancelled'] } }),
-      Emergency.countDocuments({ priority: 'High', status: { $nin: ['Resolved', 'Cancelled'] } }),
-      Emergency.countDocuments({ aiStatus: 'Verification Required' }),
-      Emergency.countDocuments({ assignedVolunteer: { $ne: null } }),
-      Emergency.countDocuments({ status: 'In Progress' }),
-      Emergency.countDocuments({ status: 'Resolved' }),
-    ]);
-    res.status(200).json({ success: true, stats: { active, critical, high, verification, assigned, inProgress, resolved } });
+    const filters = await Promise.all(Object.entries(emergencyFilters).map(async ([name, createFilter]) => [
+      name,
+      await filterForEmergencyViewer(createFilter(), req.user),
+    ]));
+    const counts = Object.fromEntries(await Promise.all(filters.map(async ([name, filter]) => [
+      name,
+      await Emergency.countDocuments(filter),
+    ])));
+    res.status(200).json({
+      success: true,
+      stats: {
+        total: counts.all,
+        active: counts.active,
+        critical: counts.critical,
+        high: counts.high,
+        verification: counts['pending-verification'],
+        assigned: counts.assigned,
+        inProgress: counts['in-progress'],
+        resolved: counts.resolved,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -558,7 +573,8 @@ router.get('/', protect, authorize('volunteer', 'ngo', 'hospital', 'authority', 
       return next(new AppError('Invalid emergency filter.', 400));
     }
 
-    const emergencies = await Emergency.find(emergencyFilters[filterName]())
+    const filter = await filterForEmergencyViewer(emergencyFilters[filterName](), req.user);
+    const emergencies = await Emergency.find(filter)
       .sort({ createdAt: -1 })
       .populate('assignedVolunteer')
       .populate('userId', 'name email role');
