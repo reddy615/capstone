@@ -197,6 +197,7 @@ const publicEmergency = (emergency) => ({
   verificationStatus: emergency.aiStatus === 'Verification Required' ? 'Verification Required' : emergency.verifiedPrediction ? 'Verified' : 'Not required',
   latitude: emergency.latitude,
   longitude: emergency.longitude,
+  locationName: emergency.locationName || '',
   location: emergency.location,
   status: emergency.status,
   assignedVolunteer: emergency.assignedVolunteer,
@@ -253,7 +254,7 @@ router.get('/stats', protect, authorize(...responderRoles), async (req, res, nex
 
 router.post('/', protect, upload.single('image'), async (req, res, next) => {
   try {
-    const { description, latitude, longitude, contactInfo, priority } = req.body;
+    const { description, latitude, longitude, locationName, contactInfo, priority } = req.body;
 
     if ((!description || !description.trim()) && !req.file) {
       return next(new AppError('Emergency description or image is required.', 400));
@@ -276,6 +277,7 @@ router.post('/', protect, upload.single('image'), async (req, res, next) => {
       imageUrl: req.file ? `/uploads/emergencies/${req.file.filename}` : '',
       latitude: lat,
       longitude: lng,
+      locationName: typeof locationName === 'string' ? locationName.trim().slice(0, 200) : '',
       contactInfo: contactInfo ? contactInfo.trim() : '',
       priority: priority || 'Medium',
       status: 'Submitted',
@@ -296,6 +298,7 @@ router.post('/', protect, upload.single('image'), async (req, res, next) => {
         priority: emergency.priority,
         latitude: emergency.latitude,
         longitude: emergency.longitude,
+        locationName: emergency.locationName || '',
       });
     }
 
@@ -407,6 +410,7 @@ router.get('/:id/victim-view', protect, async (req, res, next) => {
       imageUrl: emergency.imageUrl || '',
       latitude: emergency.latitude,
       longitude: emergency.longitude,
+      locationName: emergency.locationName || '',
       contactInfo: emergency.contactInfo || '',
       status: emergency.status,
       aiStatus: emergency.aiStatus,

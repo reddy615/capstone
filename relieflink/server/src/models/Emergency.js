@@ -21,6 +21,7 @@ const emergencySchema = new mongoose.Schema(
     imageUrl: { type: String, default: '' },
     latitude: { type: Number, required: true, min: -90, max: 90 },
     longitude: { type: Number, required: true, min: -180, max: 180 },
+    locationName: { type: String, trim: true, maxlength: 200, default: '' },
     contactInfo: { type: String, default: '' },
     status: { type: String, enum: emergencyStatusValues, default: 'Submitted' },
     aiStatus: {

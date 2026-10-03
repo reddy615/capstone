@@ -9,9 +9,20 @@ const createEmptyForm = () => ({
   description: '',
   latitude: '',
   longitude: '',
+  locationName: '',
   contactInfo: '',
   priority: 'Medium',
 });
+
+const conciseLocationName = (address) => {
+  const locality = address.neighbourhood || address.suburb || address.quarter || address.village
+    || address.town || address.city || address.municipality || address.city_district
+    || address.hamlet || address.county;
+  return [locality, address.state, address.country]
+    .filter(Boolean)
+    .filter((part, index, parts) => parts.indexOf(part) === index)
+    .join(', ');
+};
 
 export default function EmergencySOSPage() {
   const { token } = useAuth();
@@ -23,6 +34,7 @@ export default function EmergencySOSPage() {
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [isLocating, setIsLocating] = useState(false);
+  const [geocodingStatus, setGeocodingStatus] = useState('unavailable');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,6 +50,56 @@ export default function EmergencySOSPage() {
       submissionResultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [showSubmissionResult]);
+
+  useEffect(() => {
+    const latitude = Number(form.latitude);
+    const longitude = Number(form.longitude);
+    if (!form.latitude || !form.longitude || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+      || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      setForm((previous) => ({ ...previous, locationName: '' }));
+      setGeocodingStatus('unavailable');
+      return undefined;
+    }
+
+    let active = true;
+    const controller = new AbortController();
+    setForm((previous) => ({ ...previous, locationName: '' }));
+    setGeocodingStatus('loading');
+    const timeout = window.setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({
+          format: 'jsonv2',
+          lat: String(latitude),
+          lon: String(longitude),
+          addressdetails: '1',
+          zoom: '18',
+        });
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${query}`, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Reverse geocoding failed.');
+        const result = await response.json();
+        const locationName = conciseLocationName(result.address || {});
+        if (!locationName) throw new Error('No concise location name was returned.');
+        if (active) {
+          setForm((previous) => ({ ...previous, locationName }));
+          setGeocodingStatus('resolved');
+        }
+      } catch {
+        if (active) {
+          setForm((previous) => ({ ...previous, locationName: '' }));
+          setGeocodingStatus('unavailable');
+        }
+      }
+    }, 1100);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [form.latitude, form.longitude]);
 
   const locationLabel = useMemo(() => {
     if (form.latitude && form.longitude) {
@@ -189,6 +251,7 @@ export default function EmergencySOSPage() {
       payload.append('description', form.description.trim());
       payload.append('latitude', form.latitude);
       payload.append('longitude', form.longitude);
+      if (form.locationName) payload.append('locationName', form.locationName);
       payload.append('contactInfo', form.contactInfo.trim());
       payload.append('priority', form.priority);
 
@@ -405,11 +468,30 @@ export default function EmergencySOSPage() {
             </div>
           </div>
 
+          <div>
+            <label htmlFor="locationName" className="mb-2 block text-sm font-medium text-slate-700">
+              Location
+            </label>
+            <input
+              id="locationName"
+              name="locationName"
+              type="text"
+              value={form.locationName}
+              placeholder={geocodingStatus === 'loading' ? 'Detecting location...' : 'Location name unavailable'}
+              readOnly
+              aria-live="polite"
+              className="w-full rounded-xl border border-slate-300 bg-slate-100 px-3 py-3 text-slate-700"
+            />
+          </div>
+
           <div className="rounded-xl border border-cyan-100 bg-cyan-50 p-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-cyan-900">Current location</p>
                 <p className="text-sm text-cyan-700">{locationLabel}</p>
+                <p className="mt-1 text-sm text-cyan-800" aria-live="polite">
+                  {geocodingStatus === 'loading' ? 'Detecting location...' : form.locationName || 'Location name unavailable'}
+                </p>
               </div>
 
               <button

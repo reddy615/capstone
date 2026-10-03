@@ -16,6 +16,8 @@ const { haversineKm } = emergencyRoutes;
 const originalMethods = {
   userFindById: User.findById,
   emergencyFindById: Emergency.findById,
+  emergencyCreate: Emergency.create,
+  emergencyFindByIdAndUpdate: Emergency.findByIdAndUpdate,
   emergencyFind: Emergency.find,
   emergencyCountDocuments: Emergency.countDocuments,
   volunteerFindOne: Volunteer.findOne,
@@ -44,6 +46,7 @@ const makeEmergency = (overrides = {}) => ({
   imageUrl: '',
   latitude: 19.076,
   longitude: 72.8777,
+  locationName: 'Mumbai, Maharashtra, India',
   contactInfo: '',
   status: 'Confirmed',
   aiStatus: 'Completed',
@@ -133,6 +136,43 @@ const getVictimView = (id, token) => fetch(`${baseUrl}/api/emergencies/${id}/vic
   headers: { Authorization: `Bearer ${token}` },
 });
 
+test('SOS creation persists location name without replacing coordinates', async () => {
+  const originalCreate = Emergency.create;
+  const originalFindByIdAndUpdate = Emergency.findByIdAndUpdate;
+  let savedEmergency;
+  Emergency.create = async (record) => {
+    savedEmergency = record;
+    return makeEmergency({ ...record, _id: 'emergency-submitted-a' });
+  };
+  Emergency.findByIdAndUpdate = async () => null;
+
+  try {
+    const form = new FormData();
+    form.append('description', 'Smoke reported near a warehouse.');
+    form.append('latitude', '19.076');
+    form.append('longitude', '72.8777');
+    form.append('locationName', '  Mumbai, Maharashtra, India  ');
+    const response = await fetch(`${baseUrl}/api/emergencies`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenFor('victim-a', 'victim')}` },
+      body: form,
+    });
+    const data = await response.json();
+
+    assert.equal(response.status, 201);
+    assert.equal(savedEmergency.locationName, 'Mumbai, Maharashtra, India');
+    assert.equal(savedEmergency.latitude, 19.076);
+    assert.equal(savedEmergency.longitude, 72.8777);
+    assert.equal(data.emergency.locationName, 'Mumbai, Maharashtra, India');
+    assert.equal(data.emergency.latitude, 19.076);
+    assert.equal(data.emergency.longitude, 72.8777);
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    Emergency.create = originalCreate;
+    Emergency.findByIdAndUpdate = originalFindByIdAndUpdate;
+  }
+});
+
 test('emergency list validates and applies supported responder filters', async () => {
   const filterCases = [
     ['all', {}],
@@ -217,6 +257,9 @@ test('victim-view returns real emergency, AI, actions, and nearest services with
   assert.equal(data.recommendedActions.length, 5);
   assert.equal(data.requiredEmergencyActions.find((action) => action.id === 'ai_analysis').status, 'completed');
   assert.equal(data.nearbyServices.hospitals[0].name, 'Near Hospital');
+  assert.equal(data.emergency.locationName, 'Mumbai, Maharashtra, India');
+  assert.equal(data.emergency.latitude, 19.076);
+  assert.equal(data.emergency.longitude, 72.8777);
   assert.equal(data.nearbyServices.shelters[0].name, 'Nearby Shelter');
   assert.equal(data.nearbyServices.resources[0].name, 'Rescue Kit');
   assert.ok(data.nearbyServices.hospitals[0].distanceKm < data.nearbyServices.hospitals[1].distanceKm);

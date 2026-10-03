@@ -117,7 +117,8 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
         </div>
         <p className="text-slate-700">{emergency.description || 'No text description provided.'}</p>
         <div className="grid gap-2 text-slate-600 md:grid-cols-2">
-          <span>Location: {typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span>
+          <span>Location: {emergency.locationName || 'Location name unavailable.'}</span>
+          <span>Coordinates: {typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span>
           <span>Created: {formatDate(emergency.createdAt)}</span>
           <span>Current status: {emergency.status || 'Unavailable'}</span>
           <span>AI status: {emergency.aiStatus || 'Unavailable'}</span>

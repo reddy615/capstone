@@ -47,6 +47,7 @@ const safeEmergency = (emergency) => ({
   imageUrl: emergency.imageUrl || '',
   latitude: emergency.latitude,
   longitude: emergency.longitude,
+  locationName: emergency.locationName || '',
   location: emergency.location || null,
   createdAt: emergency.createdAt,
   updatedAt: emergency.updatedAt,
