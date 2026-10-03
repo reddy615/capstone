@@ -48,6 +48,9 @@ const requiresVerification = (emergency) => emergency.verificationRequired === t
 function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const [status, setStatus] = useState(emergency.status || 'Submitted');
   const [statusError, setStatusError] = useState('');
+  const [statusSuccess, setStatusSuccess] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const updatingStatusRef = useRef(false);
   const canUpdate = responderRoles.has(role) && role !== 'hospital';
   const apiBase = import.meta.env.VITE_API_URL || '/api';
   const evidence = emergency.aiEvidence || {};
@@ -63,21 +66,41 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
 
   useEffect(() => setStatus(emergency.status || 'Submitted'), [emergency.status]);
 
-  const updateStatus = async (event) => {
-    const nextStatus = event.target.value;
+  const updateStatus = async () => {
+    if (updatingStatusRef.current || status === emergency.status) return;
+    updatingStatusRef.current = true;
+    setUpdatingStatus(true);
     setStatusError('');
+    setStatusSuccess('');
     try {
       const response = await fetch(`${apiBase}/emergencies/${emergency._id || emergency.id}/status`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Unable to update status.');
       onUpdated(data.emergency);
+      setStatus(data.emergency.status);
+      setStatusSuccess('Emergency status updated successfully.');
     } catch (error) {
-      setStatusError(error.message);
+      setStatusError('Failed to update emergency status. Please try again.');
+    } finally {
+      updatingStatusRef.current = false;
+      setUpdatingStatus(false);
     }
+  };
+
+  const selectStatus = (event) => {
+    setStatus(event.target.value);
+    setStatusError('');
+    setStatusSuccess('');
+  };
+
+  const cancelStatusChange = () => {
+    setStatus(emergency.status || 'Submitted');
+    setStatusError('');
+    setStatusSuccess('');
   };
 
   return (
@@ -131,13 +154,21 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
         </div>
 
         {canUpdate && (
-          <label className="block text-slate-700">Update response status
-            <select value={status} onChange={updateStatus} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
+          <div className="text-slate-700">
+            <label htmlFor="emergency-response-status" className="block">Update response status</label>
+            <select id="emergency-response-status" value={status} onChange={selectStatus} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2">
               {['Submitted', 'Processing', 'Detected', 'Verification Required', 'Assigned', 'In Progress', 'Resolved', 'Cancelled', 'Failed'].map((value) => <option key={value}>{value}</option>)}
             </select>
-          </label>
+            {status !== emergency.status && <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" onClick={updateStatus} disabled={updatingStatus} className="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white hover:bg-cyan-800 disabled:cursor-not-allowed disabled:opacity-60">
+                {updatingStatus ? 'Updating...' : 'Update Status'}
+              </button>
+              <button type="button" onClick={cancelStatusChange} disabled={updatingStatus} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
+            </div>}
+          </div>
         )}
-        {statusError && <p className="text-sm text-rose-700">{statusError}</p>}
+        {statusError && <p role="alert" className="text-sm text-rose-700">{statusError}</p>}
+        {statusSuccess && <p role="status" className="text-sm text-emerald-700">{statusSuccess}</p>}
     </div>
   );
 }
