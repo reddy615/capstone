@@ -122,6 +122,76 @@ npm install
 npm test
 ```
 
+The server tests use mocked Mongoose models and local HTTP servers. They do not
+connect to MongoDB, create database records, or clean up a database.
+
+### Local staging integration setup
+
+The existing `server/.env` may contain non-staging credentials and must not be
+used for staging. Create the ignored `server/.env.staging` from the
+placeholder-only `server/.env.staging.example`, then replace its placeholders
+with values for a dedicated staging cluster:
+
+```dotenv
+NODE_ENV=staging
+STAGING_MONGODB_URI=mongodb+srv://<dedicated-staging-user>:<password>@<staging-cluster>.mongodb.net/relieflink_staging?retryWrites=true&w=majority
+JWT_SECRET=<new-random-staging-only-secret>
+PORT=5000
+CLIENT_URL=http://localhost:5173
+AI_SERVICE_HOST=127.0.0.1
+AI_SERVICE_PORT=8000
+```
+
+Supply a dedicated staging/test database and a least-privilege database user.
+Do not copy `MONGODB_URI` or credentials from `server/.env`; staging mode loads
+only `.env.staging`, requires `STAGING_MONGODB_URI`, and never falls back to
+`MONGODB_URI`. Keep `.env.staging` local; the repository ignores it.
+The database name in the staging URI must include a `staging`, `stage`, `test`,
+or `testing` marker (for example, `relieflink_staging`).
+Do not add admin bootstrap credentials: automatic admin bootstrap is skipped
+in staging so starting the service does not create or modify a user.
+
+From PowerShell, start the combined backend and AI process in one terminal:
+
+```powershell
+Set-Location relieflink/server
+if (Test-Path .env.staging) { throw 'Preserving existing .env.staging; edit it without overwriting.' }
+Copy-Item .env.staging.example .env.staging
+# Edit .env.staging with the dedicated staging URI and a new staging-only JWT secret.
+$env:NODE_ENV = 'staging'
+npm run staging:preflight
+npm run dev
+```
+
+`npm run dev` starts Express and its local FastAPI child process. To run the AI
+service by itself for API checks, use a separate terminal and do not run it at
+the same time as the backend-managed AI process on port 8000:
+
+```powershell
+Set-Location relieflink/ai-service
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Run the frontend in another terminal; it uses the backend's same-origin API
+and Socket.IO defaults when served by Vite with these local URLs:
+
+```powershell
+Set-Location relieflink/client
+$env:VITE_API_URL = 'http://127.0.0.1:5000/api'
+$env:VITE_SOCKET_URL = 'http://127.0.0.1:5000'
+npm run dev -- --host 127.0.0.1
+```
+
+Before starting the backend, `npm run staging:preflight` verifies the explicit
+staging mode, URI syntax, explicit database name, and that a simultaneously
+configured `MONGODB_URI` does not target the same database. It does not connect
+to MongoDB. The existing `npm test` suite is safe to run and tests mocked
+in-memory behavior; there is currently no live MongoDB staging integration
+test suite. Live login, SOS persistence, admin status updates, and Socket.IO
+checks require pre-provisioned staging accounts/data and a separately reviewed
+test plan. Do not run mutating checks until the dedicated staging URI and
+database contents have been verified by the operator.
+
 AI-service tests:
 
 ```text

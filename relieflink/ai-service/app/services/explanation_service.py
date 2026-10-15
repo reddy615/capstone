@@ -56,8 +56,8 @@ def _validate_fusion_result(payload: dict[str, Any]) -> FusionExplanationRequest
         if not math.isclose(fusion.weights['text'], text_weight) or not math.isclose(fusion.weights['image'], image_weight):
             raise ValueError('Weights do not match the single-modality result.')
 
-    if fusion.verification_required != fusion.conflict:
-        raise ValueError('Conflict and verification flags are inconsistent.')
+    if fusion.conflict and not fusion.verification_required:
+        raise ValueError('A conflicting result must require verification.')
     if fusion.verification_required and fusion.prediction != 'Verification Required':
         raise ValueError('Verification Required must be the prediction when verification is required.')
     if fusion.prediction == 'Verification Required' and not fusion.verification_required:
@@ -98,10 +98,16 @@ def explain_fusion_result(payload: dict[str, Any]) -> ExplanationResponse:
     contribution = ModalityContribution(text_weight=fusion.weights['text'], image_weight=fusion.weights['image'])
 
     if fusion.verification_required:
-        summary = (
-            'Verification is required because the text and image models produced different predictions. '
-            'The system therefore does not automatically select one emergency category.'
-        )
+        if fusion.conflict:
+            summary = (
+                'Verification is required because the text and image models produced different predictions. '
+                'The system therefore does not automatically select one emergency category.'
+            )
+        else:
+            summary = (
+                'Verification is required because the text description is too short or its classifier '
+                'confidence is below the configured review threshold. No emergency category was automatically selected.'
+            )
         recommended_action = 'Request human verification before assigning a final emergency category.'
     elif agreement:
         summary = f'Both the text and image models predicted {fusion.text_prediction}, so the modalities agree on the detected emergency.'

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from app.config import TEXT_VERIFICATION_THRESHOLD
 from app.services.image_classifier import ImageClassifierUnavailableError
 
 CLASS_NAMES = ['Fire', 'Flood', 'Accident']
@@ -57,6 +58,8 @@ def _validate_prediction_payload(prediction: dict[str, Any] | None, label: str) 
         raise ValueError(f'{label} confidence must be numeric.')
     if math.isnan(confidence) or math.isinf(confidence) or confidence < 0 or confidence > 1:
         raise ValueError(f'{label} confidence must be between 0 and 1.')
+    if not isinstance(prediction.get('verification_required', False), bool):
+        raise ValueError(f'{label} verification_required must be a boolean.')
 
     if 'probabilities' not in prediction:
         raise ValueError(f'{label} probabilities are required.')
@@ -104,6 +107,7 @@ def fuse_predictions(
     text_weight: float = TEXT_WEIGHT,
     image_weight: float = IMAGE_WEIGHT,
     conflict_confidence_threshold: float = CONFLICT_CONFIDENCE_THRESHOLD,
+    text_verification_threshold: float = TEXT_VERIFICATION_THRESHOLD,
 ) -> dict[str, Any]:
     if text_prediction is None and image_prediction is None:
         raise ValueError('At least one modality must be provided for fusion.')
@@ -116,6 +120,52 @@ def fuse_predictions(
     normalized_image_weight = float(image_weight)
     if normalized_text_weight < 0 or normalized_image_weight < 0:
         raise ValueError('Fusion weights must be non-negative.')
+    if not math.isfinite(text_verification_threshold) or not 0 <= text_verification_threshold <= 1:
+        raise ValueError('Text verification threshold must be between 0 and 1.')
+
+    conflict = False
+    if validated_text is not None and validated_image is not None:
+        conflict, _ = _detect_conflict(
+            validated_text,
+            validated_image,
+            conflict_threshold=conflict_confidence_threshold,
+        )
+
+    text_requires_verification = validated_text is not None and (
+        validated_text.get('verification_required', False)
+        or float(validated_text['confidence']) < text_verification_threshold
+    )
+    if text_requires_verification:
+        if validated_image is None:
+            probabilities = dict(validated_text['probabilities'])
+            weights = {'text': 1.0, 'image': 0.0}
+        else:
+            probabilities = {
+                class_name: (
+                    normalized_text_weight * validated_text['probabilities'][class_name]
+                    + normalized_image_weight * validated_image['probabilities'][class_name]
+                )
+                for class_name in CLASS_NAMES
+            }
+            total = sum(probabilities.values())
+            if total <= 0:
+                raise ValueError('Fused probability distribution must have a positive total.')
+            probabilities = {key: value / total for key, value in probabilities.items()}
+            weights = {
+                'text': round(normalized_text_weight, 6),
+                'image': round(normalized_image_weight, 6),
+            }
+        return {
+            'prediction': 'Verification Required',
+            'confidence': 0.0,
+            'probabilities': {key: round(value, 6) for key, value in probabilities.items()},
+            'modality': modality,
+            'weights': weights,
+            'text_prediction': validated_text['prediction'],
+            'image_prediction': validated_image['prediction'] if validated_image is not None else None,
+            'conflict': conflict,
+            'verification_required': True,
+        }
 
     if validated_text is None and validated_image is not None:
         probabilities = dict(validated_image['probabilities'])

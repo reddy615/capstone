@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import MapView from '../components/MapView';
+import { getAiAssessmentDisplay } from '../utils/aiVerification';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -28,6 +29,7 @@ export default function EmergencySOSPage() {
   const { token } = useAuth();
   const fileInputRef = useRef(null);
   const currentEmergencyId = useRef(null);
+  const submissionInProgressRef = useRef(false);
   const submissionResultRef = useRef(null);
 
   const [form, setForm] = useState(createEmptyForm);
@@ -231,6 +233,7 @@ export default function EmergencySOSPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    if (submissionInProgressRef.current) return;
     setError('');
     setSuccess('');
 
@@ -245,6 +248,7 @@ export default function EmergencySOSPage() {
     }
 
     try {
+      submissionInProgressRef.current = true;
       setLoading(true);
 
       const payload = new FormData();
@@ -275,6 +279,9 @@ export default function EmergencySOSPage() {
 
       const emergency = data.emergency;
       const emergencyId = emergency?._id || emergency?.id;
+      if (!emergencyId) {
+        throw new Error('The SOS response did not include an emergency ID. Please check your emergency list before retrying.');
+      }
       currentEmergencyId.current = emergencyId;
       setSubmittedEmergency({ ...emergency, id: emergencyId });
       setVictimView(null);
@@ -286,6 +293,7 @@ export default function EmergencySOSPage() {
     } catch (submitError) {
       setError(submitError.message || 'Emergency submission failed.');
     } finally {
+      submissionInProgressRef.current = false;
       setLoading(false);
     }
   };
@@ -311,9 +319,10 @@ export default function EmergencySOSPage() {
   const aiAssessment = victimView?.aiAssessment;
   const aiEvidence = resultEmergency?.aiEvidence || {};
   const probabilities = aiAssessment?.probabilities || resultEmergency?.aiProbabilities || {};
-  const prediction = aiAssessment?.verificationRequired || resultEmergency?.verificationRequired
-    ? 'Verification Required'
-    : aiAssessment?.prediction || resultEmergency?.aiPrediction || '';
+  const assessmentDisplay = getAiAssessmentDisplay(aiAssessment, resultEmergency);
+  const verificationRequired = assessmentDisplay.verificationRequired;
+  const verificationReason = assessmentDisplay.reason;
+  const prediction = assessmentDisplay.prediction;
   const aiStatus = aiAssessment?.status || resultEmergency?.aiStatus || '';
   const aiFailed = ['Failed', 'failed'].includes(aiStatus);
   const aiInProgress = resultLoading || !aiStatus || ['Pending', 'pending', 'Processing', 'processing'].includes(aiStatus);
@@ -612,9 +621,11 @@ export default function EmergencySOSPage() {
                 Your emergency has been reported successfully.
               </p>
               <p className="mx-auto mt-2 max-w-2xl text-base leading-relaxed text-red-50 sm:text-lg">
-                {aiFailed
-                  ? 'Your emergency has still been recorded and can be handled by responders.'
-                  : 'AI analysis and emergency response coordination are now in progress.'}
+                {verificationRequired
+                  ? 'Your report is awaiting verification. Your SOS remains submitted for responders.'
+                  : aiFailed
+                    ? 'Your emergency has still been recorded and can be handled by responders.'
+                    : 'AI analysis and emergency response coordination are now in progress.'}
               </p>
             </div>
 
@@ -625,10 +636,10 @@ export default function EmergencySOSPage() {
                   <p className="mt-1 text-sm">Your emergency has still been recorded and can be handled by responders.</p>
                 </div>
               ) : null}
-              {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
+              {verificationRequired ? (
                 <div role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
-                  <p className="font-semibold">⚠ VERIFICATION REQUIRED</p>
-                  <p className="mt-1 text-sm">The AI models produced conflicting information. Please verify the emergency details.</p>
+                  <p className="font-semibold">Verification Required</p>
+                  <p className="mt-1 text-sm">{verificationReason}. Your SOS has still been submitted for response; the AI has not confirmed an emergency class.</p>
                 </div>
               ) : null}
 
@@ -669,10 +680,10 @@ export default function EmergencySOSPage() {
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="model-predictions-heading">
             <h2 id="model-predictions-heading" className="text-xl font-semibold text-slate-900">Model Predictions</h2>
             <h3 className="mt-4 text-base font-semibold text-slate-800">AI Emergency Assessment</h3>
-            {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
+            {verificationRequired ? (
               <div role="alert" className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950">
                 <p className="font-semibold">Verification Required</p>
-                <p className="mt-1 text-sm">The text and image analysis produced conflicting results. Please verify the emergency information.</p>
+                <p className="mt-1 text-sm">{verificationReason}. No emergency class is confirmed.</p>
               </div>
             ) : aiFailed ? (
               <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">AI analysis is temporarily unavailable.</p>
@@ -738,8 +749,11 @@ export default function EmergencySOSPage() {
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="recommended-actions-heading">
             <h2 id="recommended-actions-heading" className="text-xl font-semibold text-slate-900">Recommended Actions</h2>
-            {aiAssessment?.verificationRequired || resultEmergency?.verificationRequired ? (
-              <p className="mt-3 text-sm text-slate-600">Victim guidance is unavailable until the conflicting analysis is verified.</p>
+            {verificationRequired ? (
+              <>
+                <p className="mt-3 text-sm text-slate-600">Category-specific recommendations are unavailable until the report is verified.</p>
+                <p className="mt-2 text-sm text-slate-700">If anyone is in immediate danger, contact local emergency services and move to safety if you can do so without increasing risk. Do not wait for AI verification to seek help.</p>
+              </>
             ) : aiFailed ? (
               <p className="mt-3 text-sm text-slate-600">Recommendations are unavailable because AI analysis failed.</p>
             ) : aiInProgress ? (

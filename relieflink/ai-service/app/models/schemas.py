@@ -9,3 +9,5 @@ class PredictionResponse(BaseModel):
     prediction: str
     confidence: float
     probabilities: dict[str, float]
+    verification_required: bool = False
+    verification_reason: str | None = None

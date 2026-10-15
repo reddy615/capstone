@@ -100,6 +100,22 @@ const valuesFromMap = (value) => {
   return { ...value };
 };
 
+const requiresAIVerification = (emergency) => {
+  const evidence = emergency.aiEvidence || {};
+  const fusion = evidence.fusion || {};
+  const textPrediction = evidence.textPrediction || {};
+  const humanVerified = CLASS_NAMES.includes(emergency.verifiedPrediction)
+    && emergency.aiStatus === 'Completed';
+  return !humanVerified && (
+    emergency.aiStatus === 'Verification Required'
+    || emergency.status === 'Verification Required'
+    || fusion.conflict === true
+    || fusion.verification_required === true
+    || fusion.verificationRequired === true
+    || textPrediction.verification_required === true
+  );
+};
+
 const serviceCoordinates = (service) => {
   const coordinates = service?.location?.coordinates;
   if (!Array.isArray(coordinates) || coordinates.length < 2) return null;
@@ -381,8 +397,17 @@ router.get('/:id/recommendations', protect, async (req, res, next) => {
   try {
     const emergency = await getEmergencyOrFail(req.params.id, req.user, next);
     if (!emergency) return;
-    if (emergency.aiStatus === 'Verification Required' || !CLASS_NAMES.includes(emergency.aiPrediction)) {
-      return res.status(200).json({ success: true, recommendations: emergency.recommendations || { facilities: [], resources: [], facilityMessage: 'No suitable registered facility available.' } });
+    if (requiresAIVerification(emergency) || !CLASS_NAMES.includes(emergency.aiPrediction)) {
+      return res.status(200).json({
+        success: true,
+        recommendations: {
+          facilities: [],
+          resources: [],
+          facilityMessage: requiresAIVerification(emergency)
+            ? 'Human verification is required before recommendations.'
+            : emergency.recommendations?.facilityMessage || 'No suitable registered facility available.',
+        },
+      });
     }
     const recommendations = await findRecommendations(emergency, emergency.aiPrediction);
     await Emergency.updateOne({ _id: emergency._id }, { $set: { recommendations } });
@@ -399,8 +424,11 @@ router.get('/:id/victim-view', protect, async (req, res, next) => {
 
     const evidence = emergency.aiEvidence || {};
     const fusion = evidence.fusion || {};
-    const verificationRequired = emergency.aiStatus === 'Verification Required'
-      || fusion.verification_required === true;
+    const textPrediction = evidence.textPrediction || {};
+    const verificationRequired = requiresAIVerification(emergency);
+    const aiVerificationReason = textPrediction.verification_reason
+      || textPrediction.verificationReason
+      || (fusion.conflict ? 'conflicting_predictions' : '');
     const probabilities = valuesFromMap(emergency.aiProbabilities);
     const recommendations = emergency.recommendations || {};
     const nearbyServices = await nearbyServicesFor(emergency);
@@ -427,11 +455,12 @@ router.get('/:id/victim-view', protect, async (req, res, next) => {
           confidence: fusion.confidence,
           probabilities: fusion.probabilities || {},
           conflict: Boolean(fusion.conflict),
-          verificationRequired: Boolean(fusion.verification_required),
+          verificationRequired: verificationRequired && Boolean(fusion.verification_required ?? fusion.verificationRequired),
           modality: fusion.modality || '',
         } : null,
       },
       verificationRequired,
+      aiVerificationReason,
       verifiedPrediction: emergency.verifiedPrediction || '',
       verificationReason: emergency.verificationReason || '',
       priority: emergency.priority || '',
@@ -469,6 +498,7 @@ router.get('/:id/victim-view', protect, async (req, res, next) => {
         confidence: emergency.aiConfidence,
         probabilities,
         verificationRequired,
+        verificationReason: verificationRequired ? aiVerificationReason || 'verification_required' : '',
         modalityContribution: emergency.aiModalityContribution || null,
       },
       explanation: {
@@ -613,3 +643,4 @@ module.exports.statusValues = statusValues;
 module.exports.haversineKm = haversineKm;
 module.exports.recommendedActionsFor = recommendedActionsFor;
 module.exports.requiredEmergencyActionsFor = requiredEmergencyActionsFor;
+module.exports.requiresAIVerification = requiresAIVerification;

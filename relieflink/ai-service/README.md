@@ -1,5 +1,28 @@
 # ReliefLink AI Service
 
+## NLP text classifier training
+
+The emergency text classifier uses TF-IDF features and Logistic Regression. Its training data combines:
+
+- `data/dev_dataset.json`
+- `data/image_dataset/datasets/text/emergency_text.csv` (`text` and `label` columns)
+
+From the `ai-service` directory, validate the combined data, evaluate a reproducible stratified holdout, then refit and save the serving model with:
+
+```sh
+python -m scripts.train_text_classifier
+```
+
+The training command rejects missing descriptions, unsupported labels, and normalized duplicate descriptions rather than silently dropping records. It backs up the existing model under `models/backups/`, updates `models/emergency_text_model.joblib`, and writes split details, class counts, evaluation metrics, and limitations to `models/text_training_metadata.json`. The held-out metrics are measured on the stratified split before the final model is refit on all valid records; they are not training-set scores or a claim of real-world performance.
+
+### Text prediction uncertainty
+
+`POST /api/v1/predict/text` retains the Fire/Flood/Accident prediction and probability fields, and adds `verification_required` and `verification_reason`. Descriptions with fewer than four normalized words are flagged as insufficient information; predictions below `TEXT_VERIFICATION_THRESHOLD` are flagged as low confidence. The threshold defaults to `0.50` and can be configured with an environment variable between `0` and `1`.
+
+When the SOS workflow passes a flagged text prediction into `/api/v1/fusion/predict`, fusion returns `Verification Required` rather than automatically confirming an emergency category, including when an image is also supplied. Strong disagreement between sufficiently confident text and image results continues to use the existing conflict verification behavior. A text prediction above threshold is still only a model classification, not proof that a report is a genuine emergency.
+
+The current 72-record dataset contains only labeled emergency descriptions, not a dedicated out-of-scope or ambiguity validation set. The `0.50` threshold is a conservative review policy informed by the small observed examples, not a calibrated or reliable out-of-scope detector; it may send genuine emergencies for review and may still allow irrelevant text above threshold. Validate threshold and short-text policy on a representative, independently labeled emergency/ambiguous/out-of-scope dataset before treating these flags as dependable.
+
 ## Phase 5: Image-Based Emergency Detection
 
 This service provides the Phase 5 computer vision pipeline for ReliefLink. It accepts an emergency image and predicts one class from:

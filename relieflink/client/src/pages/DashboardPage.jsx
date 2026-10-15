@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import MapView from '../components/MapView';
+import { getAiAssessmentDisplay } from '../utils/aiVerification';
 
 const responderRoles = new Set(['volunteer', 'ngo', 'hospital', 'authority', 'admin']);
 const eventNames = [
@@ -41,9 +42,7 @@ const emergencyFilterOptions = [
   { value: 'resolved', label: 'Resolved', title: 'Resolved Emergencies', countKey: 'resolved' },
 ];
 
-const requiresVerification = (emergency) => emergency.verificationRequired === true
-  || emergency.aiStatus === 'Verification Required'
-  || emergency.status === 'Verification Required';
+const requiresVerification = (emergency) => getAiAssessmentDisplay({}, emergency).verificationRequired;
 
 function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const [status, setStatus] = useState(emergency.status || 'Submitted');
@@ -54,6 +53,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
   const canUpdate = responderRoles.has(role) && role !== 'hospital';
   const apiBase = import.meta.env.VITE_API_URL || '/api';
   const evidence = emergency.aiEvidence || {};
+  const assessmentDisplay = getAiAssessmentDisplay({}, emergency);
   const probabilities = emergency.aiProbabilities instanceof Map
     ? Object.fromEntries(emergency.aiProbabilities)
     : emergency.aiProbabilities || {};
@@ -111,7 +111,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
             <p className="mt-1 font-semibold text-slate-900">{emergency._id || emergency.id}</p>
           </div>
           <div className="flex gap-2">
-            <StatusBadge text={emergency.type || emergency.aiPrediction || 'Unresolved'} tone={toneFor(emergency.type || emergency.aiPrediction)} />
+            <StatusBadge text={requiresVerification(emergency) ? 'Verification Required' : emergency.type || emergency.aiPrediction || 'Unresolved'} tone={toneFor(requiresVerification(emergency) ? 'Verification Required' : emergency.type || emergency.aiPrediction)} />
             <StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} />
           </div>
         </div>
@@ -130,7 +130,7 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
         <div className="border-t border-slate-200 pt-4">
           <h3 className="font-semibold text-slate-900">AI analysis</h3>
           <div className="mt-2 grid gap-2 text-slate-600 md:grid-cols-2">
-            <span>Prediction: {emergency.aiPrediction || 'Verification Required / unresolved'}</span>
+            <span>Prediction: {assessmentDisplay.prediction || 'Unresolved'}</span>
             <span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span>
             <span>Probabilities: {formatProbabilities || 'Unavailable'}</span>
             <span>Modality: {emergency.aiModalityContribution ? JSON.stringify(emergency.aiModalityContribution) : 'Unavailable'}</span>
@@ -140,18 +140,24 @@ function EmergencyDetails({ emergency, role, token, onUpdated }) {
           {evidence.imagePrediction && <p className="mt-1 text-slate-600">Image evidence: {evidence.imagePrediction.prediction} ({Math.round(evidence.imagePrediction.confidence * 100)}%)</p>}
         </div>
 
-        {emergency.aiStatus === 'Verification Required' && (
+        {requiresVerification(emergency) && (
           <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-800">
             <p className="font-semibold">Verification Required</p>
-            <p className="mt-1">The unresolved modality result must not be treated as a confirmed emergency class.</p>
+            <p className="mt-1">{assessmentDisplay.reason}. The AI class must not be treated as confirmed.</p>
             <p className="mt-1">Verification: {emergency.verifiedPrediction || 'Pending human review'}</p>
           </div>
         )}
 
         <div className="border-t border-slate-200 pt-4">
           <h3 className="font-semibold text-slate-900">Recommendations and resources</h3>
-          {facilities.length ? facilities.map((facility) => <p key={facility._id || facility.name} className="mt-2 text-slate-700">{facility.name} {facility.availableBeds !== undefined ? `(${facility.availableBeds} beds)` : facility.availableSlots !== undefined ? `(${facility.availableSlots} slots)` : ''}</p>) : <p className="mt-2 text-slate-600">{emergency.recommendations?.facilityMessage || 'No suitable registered facility available.'}</p>}
-          {resources.length ? resources.map((resource) => <p key={resource._id || resource.name} className="mt-1 text-slate-700">Resource: {resource.name} ({resource.quantity} available)</p>) : <p className="mt-2 text-slate-600">No matching registered resources available.</p>}
+          {requiresVerification(emergency) ? (
+            <p className="mt-2 text-slate-600">Category-specific recommendations are unavailable until verification is complete.</p>
+          ) : (
+            <>
+              {facilities.length ? facilities.map((facility) => <p key={facility._id || facility.name} className="mt-2 text-slate-700">{facility.name} {facility.availableBeds !== undefined ? `(${facility.availableBeds} beds)` : facility.availableSlots !== undefined ? `(${facility.availableSlots} slots)` : ''}</p>) : <p className="mt-2 text-slate-600">{emergency.recommendations?.facilityMessage || 'No suitable registered facility available.'}</p>}
+              {resources.length ? resources.map((resource) => <p key={resource._id || resource.name} className="mt-2 text-slate-700">Resource: {resource.name} ({resource.quantity} available)</p>) : <p className="mt-2 text-slate-600">No matching registered resources available.</p>}
+            </>
+          )}
         </div>
 
         {canUpdate && (
@@ -328,7 +334,7 @@ export default function DashboardPage() {
     id: emergencyKey(emergency),
     emergency,
     position: [emergency.latitude, emergency.longitude],
-    type: emergency.type || emergency.aiPrediction || 'Verification Required',
+    type: requiresVerification(emergency) ? 'Verification Required' : emergency.type || emergency.aiPrediction || 'Unresolved',
     priority: emergency.priority,
     confidence: emergency.aiConfidence,
     status: emergency.status,
@@ -340,7 +346,7 @@ export default function DashboardPage() {
       id: emergencyKey(selectedEmergency),
       emergency: selectedEmergency,
       position: [selectedEmergency.latitude, selectedEmergency.longitude],
-      type: selectedEmergency.type || selectedEmergency.aiPrediction || 'Verification Required',
+      type: requiresVerification(selectedEmergency) ? 'Verification Required' : selectedEmergency.type || selectedEmergency.aiPrediction || 'Unresolved',
       priority: selectedEmergency.priority,
       confidence: selectedEmergency.aiConfidence,
       status: selectedEmergency.status,
@@ -403,7 +409,7 @@ export default function DashboardPage() {
           {!emergencies.length && <p className="text-sm text-slate-500">{isEmergencyView && isResponder ? 'No emergencies found for this filter.' : 'No stored emergencies available.'}</p>}
           <div className="space-y-3">
             {emergencies.map((emergency) => <button type="button" key={emergencyKey(emergency)} aria-haspopup="dialog" aria-label={`Open emergency ${emergencyKey(emergency)}: ${emergency.description || emergency.type || 'Emergency details'}`} onClick={(event) => selectEmergency(emergency, event.currentTarget)} className="w-full cursor-pointer rounded-lg border border-slate-200 p-4 text-left transition hover:border-cyan-400 hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-600">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{emergency.type || emergency.aiPrediction || (requiresVerification(emergency) ? 'Verification Required' : 'Unresolved')}</p><p className="mt-1 text-xs text-slate-500">Emergency ID: {emergency._id || emergency.id}</p></div><div className="flex gap-2"><StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} /><StatusBadge text={emergency.status || emergency.aiStatus || 'Submitted'} tone={toneFor(emergency.status || emergency.aiStatus)} /></div></div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{requiresVerification(emergency) ? 'Verification Required' : emergency.type || emergency.aiPrediction || 'Unresolved'}</p><p className="mt-1 text-xs text-slate-500">Emergency ID: {emergency._id || emergency.id}</p></div><div className="flex gap-2"><StatusBadge text={emergency.priority || 'Medium'} tone={toneFor(emergency.priority)} /><StatusBadge text={emergency.status || emergency.aiStatus || 'Submitted'} tone={toneFor(emergency.status || emergency.aiStatus)} /></div></div>
               <p className="mt-3 text-sm text-slate-700">{emergency.description || 'No text description provided.'}</p>
               <div className="mt-3 grid gap-1 text-sm text-slate-600 md:grid-cols-2"><span>Confidence: {typeof emergency.aiConfidence === 'number' ? `${Math.round(emergency.aiConfidence * 100)}%` : 'Unavailable'}</span><span>Volunteer: {emergency.assignedVolunteer?.user?.name || emergency.assignedVolunteer?.name || 'Unassigned'}</span><span>Location: {typeof emergency.latitude === 'number' && typeof emergency.longitude === 'number' ? `${emergency.latitude}, ${emergency.longitude}` : 'Location unavailable.'}</span><span>Created: {formatDate(emergency.createdAt)}</span><span>Verification required: {requiresVerification(emergency) ? 'Yes' : emergency.verifiedPrediction ? 'Verified' : 'No'}</span></div>
             </button>)}

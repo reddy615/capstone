@@ -1,0 +1,61 @@
+text,label
+"There is a fire in my house",Fire
+"My house is burning",Fire
+"There are flames inside the building",Fire
+"Smoke is coming from the kitchen",Fire
+"A building caught fire",Fire
+"There is a large fire near my home",Fire
+"The shop is on fire",Fire
+"Flames are spreading quickly",Fire
+"There is heavy smoke and fire",Fire
+"A fire broke out in the apartment",Fire
+"The kitchen caught fire",Fire
+"My office building is burning",Fire
+"There are flames coming from the roof",Fire
+"The warehouse is on fire",Fire
+"A house caught fire after a gas leak",Fire
+"There is a massive fire on the street",Fire
+"Smoke is filling the building",Fire
+"The electrical fire is spreading",Fire
+"A restaurant caught fire",Fire
+"There is a fire emergency",Fire
+"Water has entered my house",Flood
+"My house is flooded",Flood
+"The road is completely underwater",Flood
+"Heavy rain has caused flooding",Flood
+"There is flooding in my area",Flood
+"Water levels are rising rapidly",Flood
+"The river has overflowed",Flood
+"Flood water has entered the village",Flood
+"Heavy rainfall has flooded the streets",Flood
+"My street is under water",Flood
+"The basement is filled with water",Flood
+"Water is entering our building",Flood
+"The bridge is surrounded by flood water",Flood
+"People are trapped because of flooding",Flood
+"The river water has entered the town",Flood
+"Flooding has blocked the road",Flood
+"Continuous rain is causing floods",Flood
+"The neighborhood is flooded",Flood
+"Water has covered the highway",Flood
+"There is a flood emergency",Flood
+"Two cars crashed on the highway",Accident
+"There was a road accident",Accident
+"A car collided with a truck",Accident
+"A bike crashed into a car",Accident
+"Two vehicles collided",Accident
+"There has been a major traffic accident",Accident
+"A person was injured in a car crash",Accident
+"A bus met with an accident",Accident
+"A truck crashed on the road",Accident
+"There was a collision at the intersection",Accident
+"A motorcycle was involved in an accident",Accident
+"Several vehicles crashed",Accident
+"A car overturned on the highway",Accident
+"There is an accident near the school",Accident
+"A vehicle crashed into a wall",Accident
+"A road crash has blocked traffic",Accident
+"A driver lost control and crashed",Accident
+"There was a serious vehicle collision",Accident
+"A car accident happened nearby",Accident
+"There is an accident emergency",Accident

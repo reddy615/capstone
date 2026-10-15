@@ -198,3 +198,60 @@ def test_configurable_weights_and_threshold():
     assert result['conflict'] is False
     assert result['verification_required'] is False
     assert result['weights'] == {'text': 0.7, 'image': 0.3}
+
+
+def test_low_confidence_text_requires_verification_even_with_an_image():
+    text_prediction = {
+        'prediction': 'Accident',
+        'confidence': 0.36,
+        'probabilities': {'Fire': 0.30, 'Flood': 0.34, 'Accident': 0.36},
+        'verification_required': True,
+    }
+    image_prediction = {
+        'prediction': 'Accident',
+        'confidence': 0.90,
+        'probabilities': {'Fire': 0.05, 'Flood': 0.05, 'Accident': 0.90},
+    }
+
+    result = fusion_service.fuse_predictions(text_prediction, image_prediction)
+
+    assert result['prediction'] == 'Verification Required'
+    assert result['verification_required'] is True
+    assert result['conflict'] is False
+
+
+def test_text_verification_threshold_is_configurable():
+    text_prediction = {
+        'prediction': 'Fire',
+        'confidence': 0.6,
+        'probabilities': {'Fire': 0.6, 'Flood': 0.2, 'Accident': 0.2},
+    }
+
+    result = fusion_service.fuse_predictions(
+        text_prediction,
+        None,
+        text_verification_threshold=0.7,
+    )
+
+    assert result['prediction'] == 'Verification Required'
+    assert result['verification_required'] is True
+
+
+def test_strong_conflict_remains_verification_required_when_text_is_flagged():
+    text_prediction = {
+        'prediction': 'Fire',
+        'confidence': 0.85,
+        'probabilities': {'Fire': 0.85, 'Flood': 0.10, 'Accident': 0.05},
+        'verification_required': True,
+    }
+    image_prediction = {
+        'prediction': 'Flood',
+        'confidence': 0.88,
+        'probabilities': {'Fire': 0.10, 'Flood': 0.88, 'Accident': 0.02},
+    }
+
+    result = fusion_service.fuse_predictions(text_prediction, image_prediction)
+
+    assert result['prediction'] == 'Verification Required'
+    assert result['verification_required'] is True
+    assert result['conflict'] is True

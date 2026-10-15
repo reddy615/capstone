@@ -80,6 +80,28 @@ def test_text_only_explanation_uses_configured_contribution():
     assert result['explanation']['image_evidence']['available'] is False
 
 
+def test_text_uncertainty_requires_verification_without_conflict():
+    payload = _fusion_payload(
+        prediction='Verification Required',
+        confidence=0.0,
+        modality='text_only',
+        weights={'text': 1.0, 'image': 0.0},
+        text_prediction='Accident',
+        image_prediction=None,
+        conflict=False,
+        verification_required=True,
+    )
+
+    response = client.post('/api/v1/explain', json=payload)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result['prediction'] == 'Verification Required'
+    assert result['explanation']['verification_required'] is True
+    assert 'too short or its classifier confidence' in result['explanation']['summary']
+    assert result['explanation']['recommended_action']
+
+
 def test_image_only_explanation_reports_visual_evidence_unavailable():
     payload = _fusion_payload(
         prediction='Flood',

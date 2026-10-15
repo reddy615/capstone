@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./config/loadEnv');
 const http = require('http');
 const mongoose = require('mongoose');
 const app = require('./app');
@@ -16,9 +16,13 @@ let aiProcess;
 const startServer = async () => {
   await connectDB();
 
-  const bootstrapResult = await bootstrapAdmin();
-  if (bootstrapResult.status !== 'skipped') {
-    console.log(`Admin bootstrap: ${bootstrapResult.status}`);
+  if (process.env.NODE_ENV === 'staging') {
+    console.log('Admin bootstrap skipped in staging.');
+  } else {
+    const bootstrapResult = await bootstrapAdmin();
+    if (bootstrapResult.status !== 'skipped') {
+      console.log(`Admin bootstrap: ${bootstrapResult.status}`);
+    }
   }
 
   try {
@@ -37,7 +41,7 @@ const startServer = async () => {
 };
 
 startServer().catch((error) => {
-  console.error('Failed to start server:', error);
+  console.error(`Failed to start server: ${error.message}`);
   stopAIService(aiProcess);
   process.exit(1);
 });
