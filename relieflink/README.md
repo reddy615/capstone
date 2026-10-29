@@ -112,6 +112,95 @@ python scripts/evaluate_phase10.py
 
 It writes `models/phase10_evaluation_report.json`. The current report records 1.0 development-set NLP metrics and 1.0 image metrics on the available images, but explicitly marks both evaluations as non-independent. Computer vision has only 4 images per class, and no scientific reliability claim is made.
 
+## Results and Performance Evaluation
+
+The proposed ReliefLink system is evaluated using classification metrics for its three emergency categories: Fire, Flood, and Accident. The metrics below describe the text classifier only unless explicitly stated otherwise.
+
+### Statistical results
+
+For each class in the multiclass task, the following measures are computed using a one-versus-rest interpretation. Precision, recall, and F1-score are reported as macro averages: the metric is calculated separately for each class and then averaged with equal weight across the three classes.
+
+| Metric | Definition | Formula |
+| --- | --- | --- |
+| Accuracy | Proportion of total predictions that are correct. | `Accuracy = (TP + TN) / (TP + TN + FP + FN)` |
+| Precision | Proportion of predicted positive cases that are correct. | `Precision = TP / (TP + FP)` |
+| Recall (Sensitivity) | Proportion of actual positive cases correctly detected. | `Recall = TP / (TP + FN)` |
+| F1-score | Harmonic mean of precision and recall. | `F1-score = 2 × (Precision × Recall) / (Precision + Recall)` |
+
+Here, **TP** (true positive) is a correctly predicted positive case, **TN** (true negative) is a correctly predicted negative case, **FP** (false positive) is a negative case incorrectly predicted as positive, and **FN** (false negative) is a positive case incorrectly predicted as negative. For each class, the other two classes are treated as the negative class in this interpretation.
+
+### Proposed text-classifier results
+
+The current training metadata records 72 valid labeled text records, balanced equally across the three classes. A stratified train/test split with random state 42 used 57 records for training the evaluation model and held out 15 records (5 per class) for evaluation. The reported held-out metrics were calculated before the final model was refit on all 72 records. The model is TF-IDF with Logistic Regression.
+
+| Evaluation item | Result |
+| --- | --- |
+| Dataset size | 72 records |
+| Fire | 24 records |
+| Flood | 24 records |
+| Accident | 24 records |
+| Model | TF-IDF + Logistic Regression |
+| Evaluation method | Stratified train/test split; random state 42 |
+| Evaluation training subset | 57 records |
+| Held-out test subset | 15 records; 5 per class |
+| Accuracy | 86.67% |
+| Macro precision | 87.78% |
+| Macro recall | 86.67% |
+| Macro F1-score | 86.60% |
+
+The held-out test set is small, so these results are preliminary and subject to substantial sampling uncertainty. They apply to the text classifier under this split only; they do not establish the performance of the image model, multimodal fusion system, or entire ReliefLink platform. The values above are recorded in [`text_training_metadata.json`](ai-service/models/text_training_metadata.json). They are distinct from the earlier development-set checks described in the Phase 10 evaluator documentation.
+
+### Existing-versus-proposed comparison
+
+The project documentation describes a fragmented existing emergency-reporting workflow but does not define a reproducible legacy model or baseline test set. The “Existing” column therefore summarizes only documented evidence; it does not imply unreported capabilities or measurements.
+
+| Aspect | Existing/manual workflow documented in project | Proposed ReliefLink system |
+| --- | --- | --- |
+| Emergency input | Emergency information is described as fragmented across descriptions, images, responders, facilities, and resources; specific baseline input capabilities are not evaluated. | SOS text, optional image, and GPS location are supported by the documented workflow. |
+| Text classification | No baseline text classifier or evaluation is documented. | TF-IDF + Logistic Regression predicts Fire, Flood, or Accident; held-out evaluation is reported above. |
+| Image classification | No baseline image classifier or evaluation is documented. | MobileNetV2 transfer learning is implemented for the three classes; no independent image test-set result is established. |
+| Multimodal fusion | No baseline fusion method or result is documented. | Text and image probability distributions use configured weighted fusion; when both are available, the documented default weights are 0.5/0.5. |
+| Uncertainty handling | No baseline uncertainty policy is documented. | Conflicting high-confidence modality predictions can be marked Verification Required for manual review. |
+| Explainability | No baseline explanation capability is documented. | The AI service reports model outputs and configured modality contributions; it does not claim unsupported feature or visual evidence. |
+| Accuracy | Not yet evaluated. | Text classifier: 86.67% on the 15-record held-out set. Image, fusion, and end-to-end accuracy: Not yet evaluated. |
+| Precision | Not yet evaluated. | Text classifier macro precision: 87.78%. Image, fusion, and end-to-end precision: Not yet evaluated. |
+| Recall | Not yet evaluated. | Text classifier macro recall: 86.67%. Image, fusion, and end-to-end recall: Not yet evaluated. |
+| F1-score | Not yet evaluated. | Text classifier macro F1-score: 86.60%. Image, fusion, and end-to-end F1-score: Not yet evaluated. |
+
+A fair numerical comparison requires the baseline and proposed models to be evaluated on the same independent test set using the same class definitions and metrics. Since such baseline results are not available, a numerical existing-versus-proposed chart is not presented.
+
+### Graphical results
+
+The following Mermaid charts visualize the verified text-classifier metrics and dataset counts. The class-distribution chart describes the dataset composition, not the distribution of real-world emergencies.
+
+**Text-classifier metrics (held-out evaluation, percent)**
+
+```mermaid
+xychart-beta
+    title "Text-classifier held-out metrics"
+    x-axis ["Accuracy", "Macro precision", "Macro recall", "Macro F1-score"]
+    y-axis "Score (%)" 0 --> 100
+    bar [86.67, 87.78, 86.67, 86.60]
+```
+
+**Dataset class distribution (72 records; dataset composition only)**
+
+```mermaid
+pie showData
+    title "Dataset class distribution (not real-world emergency prevalence)"
+    "Fire" : 24
+    "Flood" : 24
+    "Accident" : 24
+```
+
+### Results discussion
+
+The initial held-out evaluation suggests that the text classifier can distinguish the three emergency categories in the current dataset. However, the test set contains only 15 records, so the results provide limited confidence about performance on new reports or real-world emergencies. The reported metrics should be interpreted as preliminary rather than as evidence of operational reliability.
+
+Multimodal fusion combines available text and image model outputs, while uncertainty-driven verification routes qualifying disagreements for human review rather than forcing an automatic class decision. These design features describe the intended decision workflow; no measured accuracy improvement from fusion or verification is claimed because a valid comparative experiment has not been reported.
+
+Future evaluation should use a larger, independently labeled test dataset and separately measure image classification, multimodal fusion, and end-to-end emergency workflows. Baseline and proposed systems should be compared on the same independent data with consistent class definitions and metrics.
+
 ## Testing
 
 Backend tests:
