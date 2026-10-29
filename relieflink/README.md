@@ -302,15 +302,16 @@ The Phase 10 automated result at the time of this report is 5 backend tests pass
 
 ### Single-service Render deployment
 
-The repository includes `render.yaml` for one Render Web Service. The Node/Express process is the public process; it serves the React build and starts FastAPI as a localhost child process. FastAPI is not a separate public Render service.
+The repository includes `render.yaml` and a root `Dockerfile` for one Render Web Service. The Docker image pins Node.js 22 on Debian Bookworm and installs Python 3.11 for the AI virtual environment. The Node/Express process is the public process; it serves the React build and starts FastAPI as a localhost child process. FastAPI is not a separate public Render service. The Docker build excludes environment files so local secrets are not copied into the image.
 
 - Root Directory: repository root (`.`)
-- Build Command: `npm run build && python3 -m pip install -r relieflink/ai-service/requirements.txt`
+- Runtime: Docker, using the root `Dockerfile`
+- Image build: installs the frontend/backend dependencies and builds the AI-service virtual environment with Python 3.11
 - Start Command: `npm start`
 - Root package start script: `node relieflink/server/src/server.js`
 - Internal AI URL: `http://127.0.0.1:8000`
 
-On startup, Node launches Uvicorn on `127.0.0.1:8000`, waits for `/health`, then connects to MongoDB and starts the public server on Render's `PORT`. Shutdown signals stop the FastAPI child process. Express serves `client/dist` and Socket.IO remains attached to the same HTTP server.
+The build sets `PYTHON=python3.11`; `scripts/setup_ai_venv.js` verifies that interpreter is Python 3.11 before creating the AI virtual environment and installing `ai-service/requirements.txt`. The virtual-environment interpreter is checked again before dependency installation. On startup, Node launches Uvicorn on `127.0.0.1:8000`, waits for `/health`, then connects to MongoDB and starts the public server on Render's `PORT`. Shutdown signals stop the FastAPI child process. Express serves `client/dist` and Socket.IO remains attached to the same HTTP server.
 
 The backend reads `PORT`, `NODE_ENV`, `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `CLIENT_URL`, `AI_SERVICE_URL`, `AI_SERVICE_HOST`, `AI_SERVICE_PORT`, and `AI_STARTUP_TIMEOUT_MS`. The repository contains only example variable names and no production secret values. `VITE_API_URL` and `VITE_SOCKET_URL` are optional for separate local frontend development; the production build defaults to same-origin `/api` and Socket.IO.
 
