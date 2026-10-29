@@ -49,6 +49,19 @@ describe('SOS navigation and form', () => {
     expect(screen.getByRole('button', { name: 'Submit SOS' })).toBeTruthy();
   });
 
+  it('navigates to the Results page and displays the documented text metrics', async () => {
+    renderApp();
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Results' }));
+
+    expect(await screen.findByRole('heading', { name: 'Results' })).toBeTruthy();
+    expect(screen.getByText('TF-IDF + Logistic Regression')).toBeTruthy();
+    expect(screen.getAllByText('86.67%')).toHaveLength(2);
+    expect(screen.getByText('87.78%')).toBeTruthy();
+    expect(screen.getByText('86.60%')).toBeTruthy();
+    expect(screen.getByText(/not measurements of the image model, multimodal fusion/)).toBeTruthy();
+  });
+
   it('renders the SOS form immediately without waiting for emergency APIs', async () => {
     renderApp('/sos');
 
