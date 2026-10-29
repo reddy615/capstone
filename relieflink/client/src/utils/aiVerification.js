@@ -6,6 +6,8 @@ const verificationReasonLabels = {
 };
 
 export const getAiAssessmentDisplay = (assessment = {}, emergency = {}) => {
+  assessment = assessment || {};
+  emergency = emergency || {};
   const evidence = emergency.aiEvidence || {};
   const fusion = evidence.fusion || {};
   const humanVerified = ['Fire', 'Flood', 'Accident'].includes(emergency.verifiedPrediction)

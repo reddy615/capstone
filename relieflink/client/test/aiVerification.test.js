@@ -1,48 +1,48 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import { describe, expect, it } from 'vitest';
 import { getAiAssessmentDisplay } from '../src/utils/aiVerification.js';
 
-test('clear predictions retain the emergency class', () => {
-  assert.deepEqual(getAiAssessmentDisplay(
+describe('AI assessment display', () => {
+  it('clear predictions retain the emergency class', () => {
+    expect(getAiAssessmentDisplay(
     { prediction: 'Fire', verificationRequired: false },
     { aiPrediction: 'Fire' },
-  ), { verificationRequired: false, prediction: 'Fire', reason: '' });
-});
+    )).toEqual({ verificationRequired: false, prediction: 'Fire', reason: '' });
+  });
 
-test('short text reason is human-readable and suppresses the class', () => {
-  assert.deepEqual(getAiAssessmentDisplay(
+  it('short text reason is human-readable and suppresses the class', () => {
+    expect(getAiAssessmentDisplay(
     { verificationRequired: true, verificationReason: 'insufficient_information', prediction: 'Fire' },
     {},
-  ), { verificationRequired: true, prediction: 'Verification Required', reason: 'Not enough information' });
-});
+    )).toEqual({ verificationRequired: true, prediction: 'Verification Required', reason: 'Not enough information' });
+  });
 
-test('low confidence remains distinct from a modality conflict', () => {
-  assert.equal(getAiAssessmentDisplay(
+  it('low confidence remains distinct from a modality conflict', () => {
+    expect(getAiAssessmentDisplay(
     { verificationRequired: true },
     { aiEvidence: { textPrediction: { verification_reason: 'low_confidence' } } },
-  ).reason, 'Low-confidence prediction');
-});
+    ).reason).toBe('Low-confidence prediction');
+  });
 
-test('legacy conflict evidence is recognized without new optional fields', () => {
-  assert.deepEqual(getAiAssessmentDisplay(
+  it('legacy conflict evidence is recognized without new optional fields', () => {
+    expect(getAiAssessmentDisplay(
     {},
     { aiStatus: 'Verification Required', aiEvidence: { fusion: { conflict: true, verification_required: true } } },
-  ), {
-    verificationRequired: true,
-    prediction: 'Verification Required',
-    reason: 'Conflicting model predictions',
+    )).toEqual({
+      verificationRequired: true,
+      prediction: 'Verification Required',
+      reason: 'Conflicting model predictions',
+    });
   });
-});
 
-test('human verification reason is not mistaken for the AI reason', () => {
-  assert.equal(getAiAssessmentDisplay(
+  it('human verification reason is not mistaken for the AI reason', () => {
+    expect(getAiAssessmentDisplay(
     { verificationRequired: true },
     { verificationReason: 'Reviewed by responder' },
-  ).reason, 'Please verify the details before treating an AI classification as confirmed.');
-});
+    ).reason).toBe('Please verify the details before treating an AI classification as confirmed.');
+  });
 
-test('human verification clears stale AI abstention metadata', () => {
-  assert.deepEqual(getAiAssessmentDisplay(
+  it('human verification clears stale AI abstention metadata', () => {
+    expect(getAiAssessmentDisplay(
     {},
     {
       aiStatus: 'Completed',
@@ -53,5 +53,14 @@ test('human verification clears stale AI abstention metadata', () => {
         fusion: { verification_required: true },
       },
     },
-  ), { verificationRequired: false, prediction: 'Flood', reason: '' });
+    )).toEqual({ verificationRequired: false, prediction: 'Flood', reason: '' });
+  });
+
+  it('accepts null assessment and emergency values during initial rendering', () => {
+    expect(getAiAssessmentDisplay(null, null)).toEqual({
+      verificationRequired: false,
+      prediction: '',
+      reason: '',
+    });
+  });
 });

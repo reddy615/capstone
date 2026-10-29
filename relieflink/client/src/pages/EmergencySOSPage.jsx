@@ -6,6 +6,15 @@ import { getAiAssessmentDisplay } from '../utils/aiVerification';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const getRequestErrorMessage = (requestError, fallback) => {
+  if (requestError instanceof TypeError) {
+    return 'Unable to connect to the server. Your SOS was not submitted. Check your connection and try again.';
+  }
+  if (requestError instanceof SyntaxError) {
+    return 'The server returned an invalid response. Please try again.';
+  }
+  return requestError.message || fallback;
+};
 const createEmptyForm = () => ({
   description: '',
   latitude: '',
@@ -188,7 +197,7 @@ export default function EmergencySOSPage() {
       setVictimView(data);
       setSubmittedEmergency(data.emergency);
     } catch (loadError) {
-      setResultError(loadError.message || 'Unable to load emergency response information.');
+      setResultError(getRequestErrorMessage(loadError, 'Unable to load emergency response information.'));
     } finally {
       if (!silent) {
         setResultLoading(false);
@@ -291,7 +300,7 @@ export default function EmergencySOSPage() {
       setShowSubmissionResult(true);
       await refreshVictimView(emergencyId);
     } catch (submitError) {
-      setError(submitError.message || 'Emergency submission failed.');
+      setError(getRequestErrorMessage(submitError, 'Emergency submission failed.'));
     } finally {
       submissionInProgressRef.current = false;
       setLoading(false);
@@ -548,7 +557,7 @@ export default function EmergencySOSPage() {
           </div>
 
           {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
               {error}
             </div>
           )}
